@@ -96,6 +96,23 @@ def test_fetch_failure_is_skipped_not_fatal_and_retried_next_run(tmp_path):
     assert len(_rows(tmp_path / "data" / "archive.csv")) == 2
 
 
+def test_skips_ids_already_in_new_or_old(tmp_path):
+    # A winner the daily scraper already has in new.csv must NOT be re-written
+    # into archive.csv, so each winner lives in exactly one file.
+    data = tmp_path / "data"
+    data.mkdir(parents=True)
+    (data / "new.csv").write_text(
+        "id,url,title\nhttps://bestofsno.com/?p=89942,,\n", encoding="utf-8"
+    )
+    res = run_backfill(
+        str(tmp_path), delay=0, fetch_sitemap=fake_sitemap, fetch_page=fake_page
+    )
+    ids = {r["id"] for r in _rows(data / "archive.csv")}
+    assert "https://bestofsno.com/?p=89942" not in ids  # already in new.csv
+    assert ids == {"https://bestofsno.com/?p=89941"}  # only the other one
+    assert res["written"] == 1
+
+
 def test_run_backfill_rejects_non_iso_since(tmp_path):
     # A non-zero-padded --since would silently mis-filter (lexical date
     # compare), so it must be rejected rather than produce wrong results.
