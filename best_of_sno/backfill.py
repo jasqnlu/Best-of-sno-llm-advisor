@@ -295,7 +295,17 @@ def run_backfill(
         return res
 
     os.makedirs(data, exist_ok=True)
-    done = load_backfill_state(checkpoint_path) | scraper._read_ids(archive_path)
+    # Done = the checkpoint, plus every id already stored in any of the four
+    # files. Including new.csv/old.csv (not just archive.csv) is the mirror of
+    # the daily scraper skipping archived ids: a winner the daily run already
+    # captured is never re-written into archive.csv, so each winner lives in
+    # exactly one file.
+    done = (
+        load_backfill_state(checkpoint_path)
+        | scraper._read_ids(archive_path)
+        | scraper._read_ids(os.path.join(data, "new.csv"))
+        | scraper._read_ids(os.path.join(data, "old.csv"))
+    )
     todo = [loc for loc in in_window if post_id_from_url(loc) not in done]
     if limit is not None:
         todo = todo[:limit]
