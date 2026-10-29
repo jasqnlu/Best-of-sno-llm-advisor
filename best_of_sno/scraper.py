@@ -179,7 +179,9 @@ def _read_ids(path: str) -> set[str]:
     return ids
 
 
-def load_state(state_path: str, new_path: str, old_path: str) -> dict:
+def load_state(
+    state_path: str, new_path: str, old_path: str, archive_path: str | None = None
+) -> dict:
     """Load ``{last_run, seen_ids}``.
 
     ``seen_ids`` is ALWAYS unioned with the ids physically present in
@@ -188,8 +190,14 @@ def load_state(state_path: str, new_path: str, old_path: str) -> dict:
     window where a story is written to ``new.csv`` before ``state.json`` is
     saved — without it, such a story would be rotated into ``old.csv`` and
     re-fetched into ``new.csv`` on the next run (a duplicate).
+
+    When ``archive_path`` is given and exists, the historical backfill's ids
+    join the union too, so the daily run never re-writes a backfilled winner
+    (the newest winners live in both ``archive.csv`` and the feed).
     """
     csv_ids = _read_ids(old_path) | _read_ids(new_path)
+    if archive_path:
+        csv_ids |= _read_ids(archive_path)
     try:
         with open(state_path, encoding="utf-8") as handle:
             data = json.load(handle)
@@ -328,12 +336,13 @@ def run(
     new_path = os.path.join(data, "new.csv")
     old_path = os.path.join(data, "old.csv")
     state_path = os.path.join(data, "state.json")
+    archive_path = os.path.join(data, "archive.csv")
 
     if not dry_run:
         os.makedirs(data, exist_ok=True)
         os.makedirs(logs, exist_ok=True)
 
-    state = load_state(state_path, new_path, old_path)
+    state = load_state(state_path, new_path, old_path, archive_path)
     records = parse_items(fetch(feed_url), now)
     fresh = [r for r in records if r["id"] not in state["seen_ids"]]
 
