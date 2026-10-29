@@ -8,13 +8,16 @@ docs/superpowers/specs/2026-10-28-best-of-sno-advisor-design.md (§5).
 
 from __future__ import annotations
 
+import argparse
 import csv
 import io
 import json
+import logging
 import os
 import re
 import time
 from collections import Counter
+from datetime import datetime
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlparse
 
@@ -26,6 +29,8 @@ from bs4 import BeautifulSoup
 USER_AGENT = "BestOfSNO-research-scraper (07jasonlu2010@gmail.com)"
 # The one allowed, no-query-string path the daily job fetches (design §5.1).
 FEED_URL = "https://bestofsno.com/feed/"
+
+LOG = logging.getLogger("best_of_sno.scraper")
 
 # Exact column order for both CSVs (design §5.3 / plan Global Constraints).
 COLUMNS = [
@@ -280,3 +285,83 @@ def parse_items(feed_bytes: bytes, scraped_at: str) -> list[dict]:
             }
         )
     return records
+
+
+def run(
+    data_dir: str,
+    *,
+    feed_url: str,
+    dry_run: bool = False,
+    no_rotate: bool = False,
+    fetch=fetch_feed,
+    now: str | None = None,
+) -> dict:
+    """Execute one daily pass (design §5.5). Returns run counts.
+
+    ``fetch`` and ``now`` are injectable for tests. Writes nothing when
+    ``dry_run`` is set; skips the new→old rotation when ``no_rotate`` is set.
+    """
+    now = now or datetime.now().astimezone().isoformat()
+    data = os.path.join(data_dir, "data")
+    logs = os.path.join(data_dir, "logs")
+    new_path = os.path.join(data, "new.csv")
+    old_path = os.path.join(data, "old.csv")
+    state_path = os.path.join(data, "state.json")
+
+    if not dry_run:
+        os.makedirs(data, exist_ok=True)
+        os.makedirs(logs, exist_ok=True)
+
+    state = load_state(state_path, new_path, old_path)
+    records = parse_items(fetch(feed_url), now)
+    fresh = [r for r in records if r["id"] not in state["seen_ids"]]
+
+    if dry_run:
+        LOG.info(
+            "dry-run: would add %d new of %d in feed; no files written",
+            len(fresh),
+            len(records),
+        )
+        return {"moved_to_old": 0, "new_found": len(fresh)}
+
+    moved = 0 if no_rotate else rotate(new_path, old_path)
+    write_new(new_path, fresh)
+    state["seen_ids"].update(r["id"] for r in fresh)
+    state["last_run"] = now
+    save_state(state_path, state)  # saved LAST, so a crash never marks unsaved stories seen
+
+    LOG.info("moved_to_old=%d new_found=%d", moved, len(fresh))
+    return {"moved_to_old": moved, "new_found": len(fresh)}
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Best of SNO daily scraper")
+    parser.add_argument("--dry-run", action="store_true", help="print what would happen; touch nothing")
+    parser.add_argument("--no-rotate", action="store_true", help="skip the new→old rotation (testing)")
+    parser.add_argument("--data-dir", default="best_of_sno", help="folder holding data/ and logs/")
+    parser.add_argument("--feed-url", default=FEED_URL)
+    args = parser.parse_args(argv)
+
+    logs = os.path.join(args.data_dir, "logs")
+    os.makedirs(logs, exist_ok=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        handlers=[
+            logging.FileHandler(os.path.join(logs, "scraper.log")),
+            logging.StreamHandler(),
+        ],
+    )
+
+    result = run(
+        args.data_dir,
+        feed_url=args.feed_url,
+        dry_run=args.dry_run,
+        no_rotate=args.no_rotate,
+    )
+    LOG.info("done: %s", result)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
