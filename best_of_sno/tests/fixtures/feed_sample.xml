@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+	xmlns:content="http://purl.org/rss/1.0/modules/content/"
+	xmlns:dc="http://purl.org/dc/elements/1.1/">
+<channel>
+	<title>Best of SNO</title>
+	<link>https://bestofsno.com</link>
+	<description>Test fixture feed</description>
+
+	<item>
+		<title>Normal Story</title>
+		<link>https://bestofsno.com/100/features/normal-story/</link>
+		<dc:creator><![CDATA[By Jane Doe, Example High School]]></dc:creator>
+		<pubDate>Wed, 15 Oct 2026 12:00:00 +0000</pubDate>
+		<category><![CDATA[Features]]></category>
+		<category><![CDATA[Showcase]]></category>
+		<guid isPermaLink="false">https://bestofsno.com/?p=100</guid>
+		<description><![CDATA[A short excerpt of the normal story.]]></description>
+		<content:encoded><![CDATA[<p>The full body of the normal story has several real words in it.</p><figure><img src="https://examplehigh.org/wp-content/uploads/2026/10/photo.png" alt=""/></figure>]]></content:encoded>
+	</item>
+
+	<item>
+		<title>Multi Author Story</title>
+		<link>https://bestofsno.com/101/sports/multi-author-story/</link>
+		<dc:creator><![CDATA[By Ann Lee, Bob Fox, and Cy Ng]]></dc:creator>
+		<pubDate>Tue, 14 Oct 2026 09:30:00 +0000</pubDate>
+		<category><![CDATA[Sports]]></category>
+		<guid isPermaLink="false">https://bestofsno.com/?p=101</guid>
+		<description><![CDATA[The team pulled off a win.]]></description>
+		<content:encoded><![CDATA[<p>The team won the game last night in overtime after a dramatic finish.</p><img src="https://bestofsno.com/wp-content/logo.png" alt=""/>]]></content:encoded>
+	</item>
+
+	<item>
+		<title>Excerpt Only Story</title>
+		<link>https://bestofsno.com/102/opinions/excerpt-only-story/</link>
+		<dc:creator><![CDATA[By Sam Park, Another School]]></dc:creator>
+		<pubDate>Mon, 13 Oct 2026 08:00:00 +0000</pubDate>
+		<category><![CDATA[Opinions]]></category>
+		<guid isPermaLink="false">https://bestofsno.com/?p=102</guid>
+		<description><![CDATA[Only a teaser excerpt is syndicated for this one.]]></description>
+	</item>
+
+</channel>
+</rss>

@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from email.utils import parsedate_to_datetime
 from urllib.parse import urlparse
 
+import feedparser
 from bs4 import BeautifulSoup
 
 # Exact column order for both CSVs (design §5.3 / plan Global Constraints).
@@ -106,3 +108,48 @@ def extract_source_site(body_html: str | None) -> str:
     if not hosts:
         return ""
     return Counter(hosts).most_common(1)[0][0]
+
+
+def _pubdate_to_iso(pubdate: str | None) -> str:
+    """Convert an RFC-822 ``pubDate`` to ISO 8601, keeping the timezone.
+
+    Falls back to the raw string if it cannot be parsed.
+    """
+    if not pubdate:
+        return ""
+    try:
+        return parsedate_to_datetime(pubdate).isoformat()
+    except (TypeError, ValueError):
+        return pubdate
+
+
+def parse_items(feed_bytes: bytes, scraped_at: str) -> list[dict]:
+    """Parse raw RSS feed bytes into one record dict per item, keyed by COLUMNS."""
+    feed = feedparser.parse(feed_bytes)
+    records: list[dict] = []
+    for entry in feed.entries:
+        raw_body = ""
+        if getattr(entry, "content", None):
+            raw_body = entry.content[0].get("value") or ""
+        author, school = parse_byline(entry.get("author"))
+        categories = ";".join(
+            tag.get("term", "") for tag in entry.get("tags", []) if tag.get("term")
+        )
+        body = strip_html(raw_body)
+        records.append(
+            {
+                "id": entry.get("id") or entry.get("link", ""),
+                "url": entry.get("link", ""),
+                "title": entry.get("title", ""),
+                "published": _pubdate_to_iso(entry.get("published")),
+                "categories": categories,
+                "author": author,
+                "school": school,
+                "summary": strip_html(entry.get("summary")),
+                "body": body,
+                "word_count": word_count(body),
+                "source_site": extract_source_site(raw_body),
+                "scraped_at": scraped_at,
+            }
+        )
+    return records
