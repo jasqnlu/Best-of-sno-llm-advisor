@@ -9,12 +9,19 @@ docs/superpowers/specs/2026-10-28-best-of-sno-advisor-design.md (§5).
 from __future__ import annotations
 
 import re
+import time
 from collections import Counter
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlparse
 
 import feedparser
+import requests
 from bs4 import BeautifulSoup
+
+# Contact-identifying UA, per robots etiquette (design §8).
+USER_AGENT = "BestOfSNO-research-scraper (07jasonlu2010@gmail.com)"
+# The one allowed, no-query-string path the daily job fetches (design §5.1).
+FEED_URL = "https://bestofsno.com/feed/"
 
 # Exact column order for both CSVs (design §5.3 / plan Global Constraints).
 COLUMNS = [
@@ -108,6 +115,37 @@ def extract_source_site(body_html: str | None) -> str:
     if not hosts:
         return ""
     return Counter(hosts).most_common(1)[0][0]
+
+
+def fetch_feed(
+    url: str,
+    *,
+    session=None,
+    timeout: int = 20,
+    retries: int = 3,
+    backoff: float = 2.0,
+) -> bytes:
+    """GET ``url`` with the contact User-Agent; retry transient failures.
+
+    Retries on any ``requests`` error (connection errors and 4xx/5xx via
+    ``raise_for_status``), sleeping ``backoff`` seconds between attempts.
+    Returns the raw response bytes; re-raises the last error if all attempts
+    fail.
+    """
+    sess = session or requests.Session()
+    last_exc: Exception | None = None
+    for attempt in range(retries):
+        try:
+            resp = sess.get(
+                url, headers={"User-Agent": USER_AGENT}, timeout=timeout
+            )
+            resp.raise_for_status()
+            return resp.content
+        except requests.RequestException as exc:
+            last_exc = exc
+            if attempt < retries - 1:
+                time.sleep(backoff)
+    raise last_exc
 
 
 def _pubdate_to_iso(pubdate: str | None) -> str:
