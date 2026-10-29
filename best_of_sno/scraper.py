@@ -180,20 +180,25 @@ def _read_ids(path: str) -> set[str]:
 
 
 def load_state(state_path: str, new_path: str, old_path: str) -> dict:
-    """Load ``{last_run, seen_ids}``; rebuild seen_ids from the CSVs if the
-    state file is missing or unreadable."""
+    """Load ``{last_run, seen_ids}``.
+
+    ``seen_ids`` is ALWAYS unioned with the ids physically present in
+    ``old.csv`` + ``new.csv``, not only when the state file is missing. The
+    CSVs are proof a story was stored, so trusting them closes the crash
+    window where a story is written to ``new.csv`` before ``state.json`` is
+    saved — without it, such a story would be rotated into ``old.csv`` and
+    re-fetched into ``new.csv`` on the next run (a duplicate).
+    """
+    csv_ids = _read_ids(old_path) | _read_ids(new_path)
     try:
         with open(state_path, encoding="utf-8") as handle:
             data = json.load(handle)
         return {
             "last_run": data.get("last_run"),
-            "seen_ids": set(data.get("seen_ids", [])),
+            "seen_ids": set(data.get("seen_ids", [])) | csv_ids,
         }
     except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return {
-            "last_run": None,
-            "seen_ids": _read_ids(old_path) | _read_ids(new_path),
-        }
+        return {"last_run": None, "seen_ids": csv_ids}
 
 
 def save_state(state_path: str, state: dict) -> None:
@@ -205,14 +210,30 @@ def save_state(state_path: str, state: dict) -> None:
     _atomic_write_text(state_path, json.dumps(payload, indent=2))
 
 
+# Leading characters a spreadsheet may read as a formula (CSV injection).
+# Scraped cells are untrusted, and these CSVs are opened in Excel (design §2).
+_INJECTION_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value):
+    """Neutralize spreadsheet formula injection by prefixing a `'` to any
+    string cell that starts with a formula trigger. Non-strings pass through."""
+    if isinstance(value, str) and value and value[0] in _INJECTION_PREFIXES:
+        return "'" + value
+    return value
+
+
 def _rows_to_csv_text(records: list[dict]) -> str:
-    """Render records as CSV text with the COLUMNS header."""
+    """Render records as CSV text with the COLUMNS header, with each cell
+    guarded against spreadsheet formula injection."""
     buf = io.StringIO()
     writer = csv.DictWriter(
         buf, fieldnames=COLUMNS, restval="", extrasaction="ignore"
     )
     writer.writeheader()
-    writer.writerows(records)
+    writer.writerows(
+        {key: _csv_safe(val) for key, val in record.items()} for record in records
+    )
     return buf.getvalue()
 
 

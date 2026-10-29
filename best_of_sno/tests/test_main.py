@@ -90,6 +90,27 @@ def test_dry_run_writes_nothing(tmp_path):
     assert _snapshot(tmp_path) == before
 
 
+def test_rerun_after_partial_crash_does_not_duplicate(tmp_path):
+    # Simulate a crash AFTER new.csv was written but BEFORE state.json was
+    # saved: id 103 sits in new.csv yet is absent from state's seen_ids.
+    from best_of_sno.scraper import COLUMNS, save_state, write_new
+
+    data = tmp_path / "data"
+    data.mkdir(parents=True)
+    row = {c: "" for c in COLUMNS}
+    row["id"] = "https://bestofsno.com/?p=103"
+    write_new(str(data / "new.csv"), [row])
+    save_state(
+        str(data / "state.json"),
+        {"last_run": NOW, "seen_ids": {"https://bestofsno.com/?p=100"}},
+    )
+    # Re-run; the feed still serves 103 (plus an already-seen 102).
+    run(str(tmp_path), feed_url="x", fetch=lambda url: EXTRA_FEED, now=NOW)
+    combined = [r["id"] for r in _rows(data / "old.csv")]
+    combined += [r["id"] for r in _rows(data / "new.csv")]
+    assert combined.count("https://bestofsno.com/?p=103") == 1
+
+
 def test_no_rotate_keeps_old_untouched(tmp_path):
     run(str(tmp_path), feed_url="x", fetch=_fetch_fixture, now=NOW)
     res = run(str(tmp_path), feed_url="x", fetch=_fetch_fixture, now=NOW, no_rotate=True)

@@ -46,6 +46,29 @@ def test_rotate_moves_rows_and_clears_new(tmp_path):
     assert len(_read_rows(str(np))) == 0
 
 
+def test_write_new_neutralizes_formula_injection(tmp_path):
+    np = tmp_path / "new.csv"
+    rec = _rec("x")
+    rec["title"] = "=cmd|'/c calc'!A1"
+    rec["body"] = "+SUM(1,2)"
+    rec["author"] = "@evil"
+    rec["summary"] = "-1+1"
+    write_new(str(np), [rec])
+    row = _read_rows(str(np))[0]
+    assert row["title"].startswith("'")
+    assert row["body"].startswith("'")
+    assert row["author"].startswith("'")
+    assert row["summary"].startswith("'")
+
+
+def test_write_new_leaves_normal_values_untouched(tmp_path):
+    np = tmp_path / "new.csv"
+    rec = _rec("y")
+    rec["title"] = "Normal Title"
+    write_new(str(np), [rec])
+    assert _read_rows(str(np))[0]["title"] == "Normal Title"
+
+
 def test_rotate_appends_to_existing_old(tmp_path):
     np = tmp_path / "new.csv"
     op = tmp_path / "old.csv"
