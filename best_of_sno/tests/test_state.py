@@ -39,6 +39,17 @@ def test_corrupt_state_falls_back_to_csvs(tmp_path):
     assert loaded["seen_ids"] == {"x"}
 
 
+def test_archive_ids_join_seen_union(tmp_path):
+    np = tmp_path / "new.csv"
+    op = tmp_path / "old.csv"
+    ap = tmp_path / "archive.csv"
+    _write_csv_with_ids(np, ["n1"])
+    _write_csv_with_ids(op, ["o1"])
+    _write_csv_with_ids(ap, ["arch1"])
+    loaded = load_state(str(tmp_path / "state.json"), str(np), str(op), str(ap))
+    assert {"n1", "o1", "arch1"} <= loaded["seen_ids"]
+
+
 def test_save_is_atomic_no_tmp_left(tmp_path):
     sp = tmp_path / "state.json"
     save_state(str(sp), {"last_run": None, "seen_ids": set()})
