@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# macOS
+.DS_Store
+
+# Superpowers execution scratch (git-ignored workspace)
+.superpowers/
+
+# Scraper runtime data (local-only; copyright: never commit story text)
+best_of_sno/data/*.csv
+best_of_sno/data/*.tmp
+best_of_sno/data/state.json
+best_of_sno/logs/*.log
