@@ -9,6 +9,7 @@ docs/superpowers/specs/2026-10-28-best-of-sno-advisor-design.md (§5).
 from __future__ import annotations
 
 import csv
+import io
 import json
 import os
 import re
@@ -197,6 +198,43 @@ def save_state(state_path: str, state: dict) -> None:
         "seen_ids": sorted(state.get("seen_ids", [])),
     }
     _atomic_write_text(state_path, json.dumps(payload, indent=2))
+
+
+def _rows_to_csv_text(records: list[dict]) -> str:
+    """Render records as CSV text with the COLUMNS header."""
+    buf = io.StringIO()
+    writer = csv.DictWriter(
+        buf, fieldnames=COLUMNS, restval="", extrasaction="ignore"
+    )
+    writer.writeheader()
+    writer.writerows(records)
+    return buf.getvalue()
+
+
+def _read_rows(path: str) -> list[dict]:
+    try:
+        with open(path, newline="", encoding="utf-8") as handle:
+            return list(csv.DictReader(handle))
+    except FileNotFoundError:
+        return []
+
+
+def write_new(new_path: str, records: list[dict]) -> None:
+    """Atomically (over)write ``new_path`` with the header + one row per record.
+
+    An empty ``records`` list produces a header-only file.
+    """
+    _atomic_write_text(new_path, _rows_to_csv_text(records))
+
+
+def rotate(new_path: str, old_path: str) -> int:
+    """Append every data row of ``new_path`` onto ``old_path``, then reset
+    ``new_path`` to header-only. Returns the number of rows moved."""
+    new_rows = _read_rows(new_path)
+    if new_rows:
+        _atomic_write_text(old_path, _rows_to_csv_text(_read_rows(old_path) + new_rows))
+    write_new(new_path, [])
+    return len(new_rows)
 
 
 def _pubdate_to_iso(pubdate: str | None) -> str:
