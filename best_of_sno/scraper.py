@@ -8,6 +8,9 @@ docs/superpowers/specs/2026-10-28-best-of-sno-advisor-design.md (§5).
 
 from __future__ import annotations
 
+import csv
+import json
+import os
 import re
 import time
 from collections import Counter
@@ -146,6 +149,54 @@ def fetch_feed(
             if attempt < retries - 1:
                 time.sleep(backoff)
     raise last_exc
+
+
+def _atomic_write_text(path: str, text: str) -> None:
+    """Write ``text`` to ``path`` via a temp file + rename (crash-safe)."""
+    tmp = f"{path}.tmp"
+    with open(tmp, "w", encoding="utf-8", newline="") as handle:
+        handle.write(text)
+    os.replace(tmp, path)
+
+
+def _read_ids(path: str) -> set[str]:
+    """Return the set of values in the ``id`` column of a CSV (missing → empty)."""
+    ids: set[str] = set()
+    try:
+        with open(path, newline="", encoding="utf-8") as handle:
+            for row in csv.DictReader(handle):
+                value = row.get("id")
+                if value:
+                    ids.add(value)
+    except FileNotFoundError:
+        pass
+    return ids
+
+
+def load_state(state_path: str, new_path: str, old_path: str) -> dict:
+    """Load ``{last_run, seen_ids}``; rebuild seen_ids from the CSVs if the
+    state file is missing or unreadable."""
+    try:
+        with open(state_path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        return {
+            "last_run": data.get("last_run"),
+            "seen_ids": set(data.get("seen_ids", [])),
+        }
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {
+            "last_run": None,
+            "seen_ids": _read_ids(old_path) | _read_ids(new_path),
+        }
+
+
+def save_state(state_path: str, state: dict) -> None:
+    """Atomically write state as JSON, with ``seen_ids`` as a sorted list."""
+    payload = {
+        "last_run": state.get("last_run"),
+        "seen_ids": sorted(state.get("seen_ids", [])),
+    }
+    _atomic_write_text(state_path, json.dumps(payload, indent=2))
 
 
 def _pubdate_to_iso(pubdate: str | None) -> str:
