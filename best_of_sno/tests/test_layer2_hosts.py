@@ -63,3 +63,62 @@ def test_require_iso_date_rejects_bad_values(bad):
 
 def test_require_iso_date_returns_good_value():
     assert _require_iso_date("2026-10-10", "--until") == "2026-10-10"
+
+
+class _Resp:
+    def __init__(self, content):
+        self.content = content
+
+    def raise_for_status(self):
+        pass
+
+
+class _Session:
+    """Serves canned bytes per URL and records every URL requested."""
+
+    def __init__(self, pages):
+        self.pages, self.calls = pages, []
+
+    def get(self, url, headers=None, timeout=None):
+        self.calls.append(url)
+        return _Resp(self.pages[url])
+
+
+def _index(*locs):
+    body = "".join(f"<sitemap><loc>{l}</loc></sitemap>" for l in locs)
+    return (
+        "<?xml version='1.0'?><sitemapindex "
+        f"xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'>{body}</sitemapindex>"
+    ).encode()
+
+
+def test_fetch_all_post_sitemaps_selects_yoast_post_sitemaps():
+    # Harker serves Yoast SEO sitemaps, not WP core's wp-sitemap-posts-post-N.
+    from best_of_sno.backfill import fetch_all_post_sitemaps
+
+    h = "https://harkeraquila.com"
+    sess = _Session({
+        f"{h}/wp-sitemap.xml": _index(
+            f"{h}/post-sitemap.xml", f"{h}/post-sitemap2.xml",
+            f"{h}/page-sitemap.xml", f"{h}/staff_profile-sitemap.xml",
+        ),
+        f"{h}/post-sitemap.xml": b"A",
+        f"{h}/post-sitemap2.xml": b"B",
+    })
+    out = fetch_all_post_sitemaps(session=sess, host="harkeraquila.com", delay=0)
+    assert out == [b"A", b"B"]
+    assert f"{h}/page-sitemap.xml" not in sess.calls
+
+
+def test_fetch_all_post_sitemaps_core_selection_unchanged():
+    from best_of_sno.backfill import fetch_all_post_sitemaps
+
+    b = "https://bestofsno.com"
+    sess = _Session({
+        f"{b}/wp-sitemap.xml": _index(
+            f"{b}/wp-sitemap-posts-post-1.xml", f"{b}/wp-sitemap-posts-page-1.xml",
+            f"{b}/wp-sitemap-taxonomies-category-1.xml",
+        ),
+        f"{b}/wp-sitemap-posts-post-1.xml": b"P",
+    })
+    assert fetch_all_post_sitemaps(session=sess, delay=0) == [b"P"]

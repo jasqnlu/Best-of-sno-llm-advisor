@@ -12,6 +12,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import time
 from datetime import datetime
 from urllib.parse import urlparse
@@ -42,6 +43,10 @@ _DATE_FORMAT = "%B %d, %Y"  # e.g. "October 28, 2026"
 
 # WordPress sitemap namespace.
 _SM_NS = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
+
+# Yoast SEO's post sub-sitemaps (post-sitemap.xml, post-sitemap2.xml, ...),
+# served instead of WP core's wp-sitemap-posts-post-N.xml on some SNO sites.
+_YOAST_POST_SITEMAP_RE = re.compile(r"/post-sitemap\d*\.xml$")
 
 
 def parse_sitemap(xml_bytes: bytes) -> list[tuple[str, str]]:
@@ -233,14 +238,17 @@ def fetch_all_post_sitemaps(
 
     This is the network boundary (like ``scraper.fetch_feed``); tests inject
     a fake in its place. The published-post sitemaps are the only ones we
-    need — pages/infobox/taxonomy sitemaps are not winning stories.
+    need — pages/infobox/taxonomy sitemaps are not winning stories. Both
+    WP core (``wp-sitemap-posts-post-N.xml``) and Yoast SEO
+    (``post-sitemapN.xml``) sub-sitemap names are recognized.
     """
     index = fetch_page(sitemap_index_url(host), session=session)
     root = ET.fromstring(index)
     locs = [
         el.text.strip()
         for el in root.iter(f"{_SM_NS}loc")
-        if el.text and "posts-post" in el.text
+        if el.text
+        and ("posts-post" in el.text or _YOAST_POST_SITEMAP_RE.search(el.text.strip()))
     ]
     out: list[bytes] = []
     for i, loc in enumerate(locs):
