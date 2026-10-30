@@ -9,8 +9,10 @@ docs/superpowers/specs/2026-10-29-layer2-school-site-nonwinners-design.md.
 
 from __future__ import annotations
 
+import csv
 import difflib
 import html
+import io
 import logging
 import os
 import re
@@ -214,3 +216,39 @@ def load_winner_corpus(data_dir: str) -> dict[str, list[dict]]:
             winner["norm_title"] = normalize_title(winner["title"])
             corpus.setdefault(row["school"], []).append(winner)
     return corpus
+
+
+# Archive schema + label columns, appended never substituted (spec §4), so
+# Layers 3-4 can read archive.csv and layer2.csv as one corpus.
+LAYER2_COLUMNS = scraper.COLUMNS + ["label", "matched_id"]
+UNCERTAIN_COLUMNS = LAYER2_COLUMNS + ["reason", "candidate_title", "candidate_url"]
+
+
+def _rows_to_csv_text(records: list[dict], columns: list[str]) -> str:
+    """Render records under ``columns`` in the archive's dialect
+    (QUOTE_MINIMAL), each cell guarded against formula injection."""
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=columns, restval="", extrasaction="ignore")
+    writer.writeheader()
+    writer.writerows(
+        {key: scraper._csv_safe(val) for key, val in record.items()} for record in records
+    )
+    return buf.getvalue()
+
+
+def append_rows(path: str, records: list[dict], columns: list[str]) -> None:
+    """Append ``records`` to the CSV at ``path`` under ``columns``, crash-safe.
+
+    Same read-existing + atomic rewrite as ``backfill.append_rows``, but
+    bound to Layer 2's wider column lists — the backfill's writer is fixed
+    to the 12 archive columns and would silently drop the label fields.
+    """
+    if not records:
+        return
+    existing = scraper._read_rows(path)
+    scraper._atomic_write_text(path, _rows_to_csv_text(existing + records, columns))
+
+
+# The checkpoint is the backfill's format exactly ({"done_ids": [...]}).
+load_layer2_state = backfill.load_backfill_state
+save_layer2_state = backfill.save_backfill_state
