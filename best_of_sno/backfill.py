@@ -12,6 +12,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import time
 from datetime import datetime
 from urllib.parse import urlparse
@@ -27,7 +28,14 @@ from . import scraper
 
 LOG = logging.getLogger("best_of_sno.backfill")
 
-SITEMAP_INDEX = "https://bestofsno.com/wp-sitemap.xml"
+
+
+def sitemap_index_url(host: str) -> str:
+    """The WordPress sitemap index for ``host`` (every SNO site shares it)."""
+    return f"https://{host}/wp-sitemap.xml"
+
+
+SITEMAP_INDEX = sitemap_index_url("bestofsno.com")
 
 # The bullet separating "By Author, School" from the date in .sno-story-byline.
 _BYLINE_BULLET = "•"
@@ -35,6 +43,10 @@ _DATE_FORMAT = "%B %d, %Y"  # e.g. "October 28, 2026"
 
 # WordPress sitemap namespace.
 _SM_NS = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
+
+# Yoast SEO's post sub-sitemaps (post-sitemap.xml, post-sitemap2.xml, ...),
+# served instead of WP core's wp-sitemap-posts-post-N.xml on some SNO sites.
+_YOAST_POST_SITEMAP_RE = re.compile(r"/post-sitemap\d*\.xml$")
 
 
 def parse_sitemap(xml_bytes: bytes) -> list[tuple[str, str]]:
@@ -64,15 +76,16 @@ def select_candidates(pairs: list[tuple[str, str]], since: str) -> list[str]:
     return [loc for loc, lastmod in pairs if lastmod and lastmod >= since]
 
 
-def post_id_from_url(url: str) -> str:
+def post_id_from_url(url: str, *, host: str = "bestofsno.com") -> str:
     """Build the daily-feed guid scheme from a post URL.
 
     ``https://bestofsno.com/89942/arts-entertainment/scene-around/`` ->
     ``https://bestofsno.com/?p=89942``, so backfilled rows dedup against
-    the daily scraper's ids.
+    the daily scraper's ids. Layer 2 passes each school's ``host`` so ids
+    from different sites never collide.
     """
     numeric = urlparse(url).path.strip("/").split("/")[0]
-    return f"https://bestofsno.com/?p={numeric}"
+    return f"https://{host}/?p={numeric}"
 
 
 def _category_from_url(url: str) -> str:
@@ -112,14 +125,17 @@ def _date_to_iso(date_str: str) -> str:
         return ""
 
 
-def parse_post(html: bytes, url: str, scraped_at: str, *, since: str) -> dict | None:
+def parse_post(
+    html: bytes, url: str, scraped_at: str, *, since: str, host: str = "bestofsno.com"
+) -> dict | None:
     """Parse one post HTML page into a record keyed by ``scraper.COLUMNS``.
 
     Returns ``None`` when the parsed published date is a valid date before
     ``since`` (the published-date gate catches pre-window posts that passed
     the sitemap's ``lastmod`` prefilter). A missing or unparseable byline
     never drops the story: author/school/published are left empty and the
-    body — the fine-tuning signal — is still captured.
+    body — the fine-tuning signal — is still captured. ``host`` only sets
+    the ``id`` scheme (see ``post_id_from_url``).
     """
     soup = BeautifulSoup(html, "html.parser")
 
@@ -153,7 +169,7 @@ def parse_post(html: bytes, url: str, scraped_at: str, *, since: str) -> dict | 
     body = scraper.strip_html(body_html)
 
     return {
-        "id": post_id_from_url(url),
+        "id": post_id_from_url(url, host=host),
         "url": url,
         "title": title.strip(),
         "published": published,
@@ -214,30 +230,51 @@ def fetch_page(url, *, session=None, timeout=20, retries=3, backoff=2.0) -> byte
     )
 
 
-def fetch_all_post_sitemaps(*, session=None) -> list[bytes]:
+def fetch_all_post_sitemaps(
+    *, session=None, host: str = "bestofsno.com", delay: float = 6.0
+) -> list[bytes]:
     """Default enumerator: fetch the sitemap index, then every
     ``wp-sitemap-posts-post-*.xml`` sub-sitemap, returning their raw bytes.
 
     This is the network boundary (like ``scraper.fetch_feed``); tests inject
     a fake in its place. The published-post sitemaps are the only ones we
-    need — pages/infobox/taxonomy sitemaps are not winning stories.
+    need — pages/infobox/taxonomy sitemaps are not winning stories. Both
+    WP core (``wp-sitemap-posts-post-N.xml``) and Yoast SEO
+    (``post-sitemapN.xml``) sub-sitemap names are recognized.
     """
-    index = fetch_page(SITEMAP_INDEX, session=session)
+    index = fetch_page(sitemap_index_url(host), session=session)
     root = ET.fromstring(index)
     locs = [
         el.text.strip()
         for el in root.iter(f"{_SM_NS}loc")
-        if el.text and "posts-post" in el.text
+        if el.text
+        and ("posts-post" in el.text or _YOAST_POST_SITEMAP_RE.search(el.text.strip()))
     ]
     out: list[bytes] = []
-    for i, loc in enumerate(locs):
+    for loc in locs:
+        time.sleep(delay)  # Crawl-delay before every same-host request after the index
         out.append(fetch_page(loc, session=session))
-        if i < len(locs) - 1:
-            time.sleep(6)  # Crawl-delay between sitemap fetches too
     return out
 
 
 _CHECKPOINT_EVERY = 25
+
+
+def _require_iso_date(value: str, flag: str) -> str:
+    """Return ``value`` if it is a zero-padded ISO date, else raise ValueError.
+
+    Dates are compared lexically, which is only correct for zero-padded ISO
+    (YYYY-MM-DD). strptime is lenient (it accepts "2026-1-1"), so round-trip
+    through strftime and require an exact match — a non-padded date would
+    otherwise silently mis-filter instead of erroring.
+    """
+    try:
+        reformatted = datetime.strptime(value, "%Y-%m-%d").strftime("%Y-%m-%d")
+    except ValueError as exc:
+        raise ValueError(f"{flag} must be an ISO date (YYYY-MM-DD): {value!r}") from exc
+    if reformatted != value:
+        raise ValueError(f"{flag} must be zero-padded (YYYY-MM-DD): {value!r}")
+    return value
 
 
 def run_backfill(
@@ -261,16 +298,7 @@ def run_backfill(
     post is dropped but marked done. Checkpoint is saved every
     ``_CHECKPOINT_EVERY`` rows and at the end.
     """
-    # Dates are compared lexically, which is only correct for zero-padded ISO
-    # (YYYY-MM-DD). strptime is lenient (it accepts "2026-1-1"), so round-trip
-    # through strftime and require an exact match — a non-padded since would
-    # otherwise silently mis-filter instead of erroring.
-    try:
-        reformatted = datetime.strptime(since, "%Y-%m-%d").strftime("%Y-%m-%d")
-    except ValueError as exc:
-        raise ValueError(f"--since must be an ISO date (YYYY-MM-DD): {since!r}") from exc
-    if reformatted != since:
-        raise ValueError(f"--since must be zero-padded (YYYY-MM-DD): {since!r}")
+    _require_iso_date(since, "--since")
 
     now = now or datetime.now().astimezone().isoformat()
     data = os.path.join(data_dir, "data")

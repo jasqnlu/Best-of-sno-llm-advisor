@@ -287,3 +287,37 @@ to `logs/layer2.log` + console, reporting per-site progress
   the markup Layer 1 already parses, but the plan's first Task saves one
   real post from **each** site as a fixture and asserts the parser handles
   all five before the crawl runs.
+
+## 11. Amendments from live data (2026-10-30)
+
+Building and trial-running Layer 2 against the live sites showed several
+§5/§8 premises to be false. The code follows these amendments; where they
+conflict with earlier sections, this section wins.
+
+- **The five sites are not uniform** (contradicts §5). Scot Scoop uses slug
+  permalinks and El Estoque WordPress date permalinks (`/2026/01/13/...`), so
+  there is no post number in the URL. `?p=<1st segment>` would give every
+  2026 El Estoque article the id `?p=2026`. Ids are `https://<host>/?p=<n>`
+  for numeric permalinks, otherwise the canonical URL (`layer2.post_id`).
+  Harker serves Yoast sitemaps (`post-sitemapN.xml`), puts the date in
+  `.sno-story-date`, and suffixes `og:title` with " - Harker Aquila".
+  Bylines on the school sites read "Name , Staff Role", not "By Name , School".
+  Author-less bylines hold only a `.time-wrapper` date.
+- **Best of SNO republishes 3–40 days after the school** (median 18,
+  measured on 17 Carlmont winners). This contradicts §8, which assumed the
+  republish keeps the original date. So:
+  - Dates "corroborate" when the corpus date is −1..60 days *after* the
+    school date, never when they are equal.
+  - A lone exact-title match must fit that lag window to be a `winner`.
+    Otherwise it is `uncertain` / `title-ambiguous` (e.g. another
+    installment of a recurring column).
+- **Window is 2025-12-01 → 2026-09-15** (replaces §2's 2026-01-01 →
+  2026-10-10). The start date: 4 of 9 January-dated Carlmont winners were
+  published on Scot Scoop in December. The end date: the run date minus the
+  40-day maximum lag, so every included article has had time to win. The
+  winners corpus must start no later than the crawl window. Otherwise
+  winners from the gap are labeled `non_winner`, so the corpus was
+  backfilled from 2025-12-01, and Layer 2 refuses a `--since` earlier
+  than the corpus start (with 7 days' slack).
+- **`uncertain.csv` reasons** are `undated`, `title-nearmatch`,
+  `author-date` and `title-ambiguous` (widens §7's two).
