@@ -67,10 +67,16 @@ def fake_page(url):
 
 
 def _seed(tmp_path):
-    _archive(tmp_path, [{"id": "https://bestofsno.com/?p=83917",
-                         "url": "https://bestofsno.com/83917/features/amputees/",
-                         "title": "Amputees redefine ability", "published": "2026-03-03",
-                         "author": "Ada Lee", "school": "Carlmont High School"}])
+    _archive(tmp_path, [
+        {"id": "https://bestofsno.com/?p=83917",
+         "url": "https://bestofsno.com/83917/features/amputees/",
+         "title": "Amputees redefine ability", "published": "2026-03-03",
+         "author": "Ada Lee", "school": "Carlmont High School"},
+        # Another school's winner: the archive (backfilled --since 2025-12-01)
+        # starts here, which is what the corpus-coverage guard checks.
+        {"id": "https://bestofsno.com/?p=80001", "title": "Early winner",
+         "published": "2025-12-01", "author": "Cy Doe", "school": "Elsewhere High School"},
+    ])
 
 
 def test_labels_winner_and_non_winner_into_layer2(tmp_path):
@@ -235,6 +241,7 @@ def test_main_never_touches_the_network_without_a_fake(tmp_path, monkeypatch):
     def boom(**kw):
         raise AssertionError("real sitemap fetcher was called")
 
+    _seed(tmp_path)
     monkeypatch.setattr("best_of_sno.backfill.fetch_all_post_sitemaps", boom)
     with pytest.raises(AssertionError, match="real sitemap fetcher"):
         main(["--data-dir", str(tmp_path), "--sites", "scotscoop.com", "--dry-run"])
@@ -265,3 +272,55 @@ def test_crawl_delay_separates_the_sitemap_from_the_first_post_fetch(tmp_path, m
     run_layer2(str(tmp_path), sites=["scotscoop.com"], delay=6.0,
                fetch_sitemap=sitemap, fetch_page=page)
     assert events == ["sitemap", ("sleep", 6.0), "fetch", ("sleep", 6.0), "fetch"]
+
+
+def test_default_window_is_december_through_mid_september(tmp_path, monkeypatch):
+    # Dec 1: school articles from December can be January Best of SNO
+    # winners. Sep 15: today minus the 40-day max republish lag, so every
+    # included article has had time to win.
+    import best_of_sno.layer2 as layer2
+
+    seen = {}
+    monkeypatch.setattr(layer2, "run_layer2", lambda data_dir, **kw: seen.update(kw) or {})
+    assert main(["--data-dir", str(tmp_path), "--dry-run"]) == 0
+    assert (seen["since"], seen["until"]) == ("2025-12-01", "2026-09-15")
+    import inspect
+    params = inspect.signature(run_layer2).parameters
+    assert (params["since"].default, params["until"].default) == ("2025-12-01", "2026-09-15")
+
+
+def test_refuses_a_window_that_starts_before_the_winners_corpus(tmp_path):
+    # December winners missing from the corpus would be labeled non_winner.
+    _archive(tmp_path, [{"id": "W", "title": "T", "published": "2026-01-05",
+                         "school": "Carlmont High School"}])
+    with pytest.raises(ValueError, match="backfill"):
+        run_layer2(str(tmp_path), since="2025-12-01", delay=0,
+                   fetch_sitemap=fake_sitemap, fetch_page=fake_page)
+
+
+def test_tolerates_a_corpus_whose_first_winner_trails_since_by_days(tmp_path):
+    # Best of SNO does not publish every day, so the first winner after a
+    # --since 2025-12-01 backfill can be dated a few days later.
+    _archive(tmp_path, [{"id": "W", "title": "T", "published": "2025-12-03",
+                         "school": "Carlmont High School"}])
+    res = run_layer2(str(tmp_path), since="2025-12-01", sites=["scotscoop.com"],
+                     delay=0, dry_run=True, fetch_sitemap=fake_sitemap, fetch_page=fake_page)
+    assert res["sites"]["scotscoop.com"]["candidates"] == 2
+
+
+def test_refuses_to_run_without_a_winners_corpus(tmp_path):
+    # An empty corpus would label every article non_winner.
+    with pytest.raises(ValueError, match="corpus"):
+        run_layer2(str(tmp_path), delay=0, fetch_sitemap=fake_sitemap, fetch_page=fake_page)
+
+
+def test_main_reports_a_window_error_without_a_traceback(tmp_path, capsys, monkeypatch):
+    # The fetcher stub keeps this test offline even if the guard regresses.
+    def boom(**kw):
+        raise AssertionError("real sitemap fetcher was called")
+
+    monkeypatch.setattr("best_of_sno.backfill.fetch_all_post_sitemaps", boom)
+    with pytest.raises(SystemExit) as exc:
+        main(["--data-dir", str(tmp_path), "--dry-run"])
+    assert exc.value.code == 2
+    assert "corpus" in capsys.readouterr().err

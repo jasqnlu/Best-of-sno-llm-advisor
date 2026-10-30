@@ -19,7 +19,7 @@ import os
 import re
 import time
 import unicodedata
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import NamedTuple
 from urllib.parse import urlparse
 
@@ -295,16 +295,65 @@ save_layer2_state = backfill.save_backfill_state
 
 
 CHECKPOINT_EVERY = 25  # rows between checkpoint saves, matching the backfill
+
+# The crawl window (decided 2026-10-30 from the measured 3-40 day republish
+# lag). Starts Dec 1 because December school articles can be January Best of
+# SNO winners; ends Sep 15 (the run date minus the 40-day max lag) so every
+# included article has had time to win.
+DEFAULT_SINCE = "2025-12-01"
+DEFAULT_UNTIL = "2026-09-15"
+
+# Best of SNO does not publish every day, so the first winner of a
+# `--since D` backfill can be dated a few days after D.
+_CORPUS_START_SLACK_DAYS = 7
 _COUNT_KEYS = (
     "candidates", "winner", "non_winner", "uncertain", "skipped", "dropped_out_of_window",
 )
 
 
+def corpus_start(data_dir: str) -> str:
+    """Earliest ``published`` date (YYYY-MM-DD) across the corpus files, any
+    school; ``""`` when there is no dated winner at all."""
+    return min(
+        (
+            row["published"][:10]
+            for name in CORPUS_FILES
+            for row in scraper._read_rows(os.path.join(data_dir, "data", name))
+            if row.get("published")
+        ),
+        default="",
+    )
+
+
+def _require_corpus_covers(data_dir: str, since: str) -> None:
+    """Refuse a crawl the winners corpus cannot label honestly.
+
+    A school article is only labelable if every date its Best of SNO
+    republish could carry is in the corpus. With no corpus, or a corpus that
+    starts after ``since``, real winners would be filed as non_winner — the
+    poisoned negative class (spec §4).
+    """
+    start = corpus_start(data_dir)
+    if not start:
+        raise ValueError(
+            f"no winners corpus under {os.path.join(data_dir, 'data')} "
+            "(archive.csv / new.csv / old.csv): run `python -m best_of_sno.backfill` first"
+        )
+    if date.fromisoformat(since) < date.fromisoformat(start) - timedelta(
+        days=_CORPUS_START_SLACK_DAYS
+    ):
+        raise ValueError(
+            f"--since {since} is before the winners corpus starts ({start}), so winners "
+            "from that period would be labeled non_winner: run "
+            f"`python -m best_of_sno.backfill --since {since}` first, or start later"
+        )
+
+
 def run_layer2(
     data_dir: str,
     *,
-    since: str = "2026-01-01",
-    until: str = "2026-10-10",
+    since: str = DEFAULT_SINCE,
+    until: str = DEFAULT_UNTIL,
     sites: list[str] | None = None,
     limit: int | None = None,
     delay: float = 6.0,
@@ -318,7 +367,8 @@ def run_layer2(
     Hosts are crawled one after another, so ``delay`` between post fetches
     honors ``Crawl-delay`` per host. Done = the checkpoint UNION the ids in
     layer2.csv and uncertain.csv, so a re-run never re-fetches or duplicates
-    even if the checkpoint is lost. A fetch failure is skipped WITHOUT
+    even if the checkpoint is lost. Refuses to start when the winners
+    corpus does not reach back to ``since``. A fetch failure is skipped WITHOUT
     marking done (retried next run); an out-of-window post is dropped and
     marked done. ``dry_run`` fetches sitemaps only and writes nothing.
 
@@ -328,6 +378,7 @@ def run_layer2(
     """
     backfill._require_iso_date(since, "--since")
     backfill._require_iso_date(until, "--until")
+    _require_corpus_covers(data_dir, since)
     hosts = list(SITES) if sites is None else list(sites)
     unknown = [h for h in hosts if h not in SITES]
     if unknown:
@@ -426,8 +477,8 @@ def run_layer2(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Best of SNO Layer 2 school-site collection")
     parser.add_argument("--data-dir", default="best_of_sno", help="folder holding data/ and logs/")
-    parser.add_argument("--since", default="2026-01-01", help="ISO date; keep posts published on/after this")
-    parser.add_argument("--until", default="2026-10-10", help="ISO date; drop posts published after this")
+    parser.add_argument("--since", default=DEFAULT_SINCE, help="ISO date; keep posts published on/after this")
+    parser.add_argument("--until", default=DEFAULT_UNTIL, help="ISO date; drop posts published after this")
     parser.add_argument("--sites", default=None,
                         help=f"comma-separated hosts (default: all of {', '.join(SITES)})")
     parser.add_argument("--limit", type=int, default=None, help="cap posts fetched per site (trial runs)")
@@ -452,10 +503,13 @@ def main(argv: list[str] | None = None) -> int:
             logging.StreamHandler(),
         ],
     )
-    res = run_layer2(
-        args.data_dir, since=args.since, until=args.until, sites=sites,
-        limit=args.limit, delay=args.delay, dry_run=args.dry_run,
-    )
+    try:
+        res = run_layer2(
+            args.data_dir, since=args.since, until=args.until, sites=sites,
+            limit=args.limit, delay=args.delay, dry_run=args.dry_run,
+        )
+    except ValueError as exc:  # a bad date or a window the corpus can't label
+        parser.error(str(exc))
     LOG.info("result: %s", res)
     return 0
 
