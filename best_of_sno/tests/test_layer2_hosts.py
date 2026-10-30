@@ -122,3 +122,25 @@ def test_fetch_all_post_sitemaps_core_selection_unchanged():
         f"{b}/wp-sitemap-posts-post-1.xml": b"P",
     })
     assert fetch_all_post_sitemaps(session=sess, delay=0) == [b"P"]
+
+
+def test_fetch_all_post_sitemaps_waits_before_every_sub_sitemap(monkeypatch):
+    # The index fetch and the first sub-sitemap are two requests to the same
+    # host, so Crawl-delay applies between them too.
+    import best_of_sno.backfill as backfill
+
+    b = "https://bestofsno.com"
+    sess = _Session({
+        f"{b}/wp-sitemap.xml": _index(f"{b}/wp-sitemap-posts-post-1.xml",
+                                      f"{b}/wp-sitemap-posts-post-2.xml"),
+        f"{b}/wp-sitemap-posts-post-1.xml": b"1",
+        f"{b}/wp-sitemap-posts-post-2.xml": b"2",
+    })
+    events = sess.calls
+    monkeypatch.setattr(backfill.time, "sleep", lambda s: events.append(("sleep", s)))
+    backfill.fetch_all_post_sitemaps(session=sess, delay=6.0)
+    assert events == [
+        f"{b}/wp-sitemap.xml", ("sleep", 6.0),
+        f"{b}/wp-sitemap-posts-post-1.xml", ("sleep", 6.0),
+        f"{b}/wp-sitemap-posts-post-2.xml",
+    ]

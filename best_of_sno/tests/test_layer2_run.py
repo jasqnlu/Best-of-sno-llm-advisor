@@ -243,3 +243,25 @@ def test_main_never_touches_the_network_without_a_fake(tmp_path, monkeypatch):
 def test_main_rejects_an_unknown_site(tmp_path):
     with pytest.raises(SystemExit):
         main(["--data-dir", str(tmp_path), "--sites", "example.com", "--dry-run"])
+
+
+def test_crawl_delay_separates_the_sitemap_from_the_first_post_fetch(tmp_path, monkeypatch):
+    # robots Crawl-delay: 6 applies to every request on a host, so the
+    # last sitemap fetch and the first post fetch must be a delay apart.
+    import best_of_sno.layer2 as layer2
+
+    _seed(tmp_path)
+    events = []
+    monkeypatch.setattr(layer2.time, "sleep", lambda s: events.append(("sleep", s)))
+
+    def sitemap(*, host):
+        events.append("sitemap")
+        return fake_sitemap(host=host)
+
+    def page(url):
+        events.append("fetch")
+        return fake_page(url)
+
+    run_layer2(str(tmp_path), sites=["scotscoop.com"], delay=6.0,
+               fetch_sitemap=sitemap, fetch_page=page)
+    assert events == ["sitemap", ("sleep", 6.0), "fetch", ("sleep", 6.0), "fetch"]

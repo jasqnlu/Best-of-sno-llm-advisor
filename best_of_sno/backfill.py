@@ -251,10 +251,9 @@ def fetch_all_post_sitemaps(
         and ("posts-post" in el.text or _YOAST_POST_SITEMAP_RE.search(el.text.strip()))
     ]
     out: list[bytes] = []
-    for i, loc in enumerate(locs):
+    for loc in locs:
+        time.sleep(delay)  # Crawl-delay before every same-host request after the index
         out.append(fetch_page(loc, session=session))
-        if i < len(locs) - 1:
-            time.sleep(delay)  # Crawl-delay between sitemap fetches too
     return out
 
 
