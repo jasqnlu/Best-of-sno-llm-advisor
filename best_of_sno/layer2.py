@@ -19,7 +19,7 @@ import os
 import re
 import time
 import unicodedata
-from datetime import datetime
+from datetime import date, datetime
 from typing import NamedTuple
 from urllib.parse import urlparse
 
@@ -125,6 +125,14 @@ def parse_school_post(
 # every real negative while 0.85 would not.
 NEARMATCH_RATIO = 0.90
 
+# Best of SNO republishes a winner days to weeks after the school site:
+# measured 3-40 days (median 18) on 17 Carlmont winners, 2026-10-30. A
+# corpus date "corroborates" a school date when it falls in this window
+# after it; -1 tolerates a timezone-shifted displayed date, 60 gives margin
+# over the observed maximum.
+MIN_REPUBLISH_LAG_DAYS = -1
+MAX_REPUBLISH_LAG_DAYS = 60
+
 _WS_RE = re.compile(r"\s+")
 
 
@@ -160,13 +168,25 @@ def _same_author(winner_author: str, record_author: str) -> bool:
     return bool(wa) and f" {wa} " in f" {ra} "
 
 
+def _dates_corroborate(winner_published: str, record_published: str) -> bool:
+    """True if the corpus (Best of SNO) date falls within the republish lag
+    after the school-site date. Never compares for equality: the two dates
+    differ by days to weeks for every real winner."""
+    try:
+        # [:10] because daily-scraper corpus rows store a full ISO datetime
+        # while backfilled and school-site rows store YYYY-MM-DD.
+        lag = (
+            date.fromisoformat(winner_published[:10])
+            - date.fromisoformat(record_published[:10])
+        ).days
+    except ValueError:  # an empty or malformed date corroborates nothing
+        return False
+    return MIN_REPUBLISH_LAG_DAYS <= lag <= MAX_REPUBLISH_LAG_DAYS
+
+
 def _same_author_and_date(winner: dict, record: dict) -> bool:
-    # [:10] because daily-scraper corpus rows store a full ISO datetime
-    # while backfilled and school-site rows store YYYY-MM-DD.
-    return (
-        _same_author(winner["author"], record["author"])
-        and bool(record["published"])
-        and winner["published"][:10] == record["published"][:10]
+    return _same_author(winner["author"], record["author"]) and _dates_corroborate(
+        winner["published"], record["published"]
     )
 
 
@@ -180,11 +200,12 @@ def classify(record: dict, winners: list[dict]) -> Verdict:
     ``winners`` rows carry ``id``, ``url``, ``title``, ``published``,
     ``author`` and a precomputed ``norm_title``. Rules, in order: undated ->
     uncertain; one exact normalized-title match -> winner; several -> the one
-    sharing author+date, else uncertain (a single match must share the
-    author OR the date, else it is a different same-titled article, e.g. a
-    recurring column -> uncertain); a near-match title -> uncertain; a
-    winner sharing author+date under a different title -> uncertain;
-    otherwise non_winner. The record's own ``school`` cell is never read —
+    sharing author+date, else uncertain (a single match must also fit the
+    republish lag, else it is a different same-titled article, e.g. another
+    installment of a recurring column -> uncertain); a near-match title ->
+    uncertain; a winner sharing the author and fitting the lag under a
+    different title -> uncertain; otherwise non_winner. "Date" always means
+    the republish-lag window (``_dates_corroborate``), never equality. The record's own ``school`` cell is never read —
     the caller picks ``winners`` by host.
     """
     if not record["published"]:
@@ -194,8 +215,7 @@ def classify(record: dict, winners: list[dict]) -> Verdict:
     exact = [w for w in winners if w["norm_title"] == title]
     if len(exact) == 1:
         winner = exact[0]
-        if (_same_author(winner["author"], record["author"])
-                or winner["published"][:10] == record["published"][:10]):
+        if _dates_corroborate(winner["published"], record["published"]):
             return Verdict("winner", winner["id"], "", "", "")
         return _uncertain("title-ambiguous", winner)
     if exact:

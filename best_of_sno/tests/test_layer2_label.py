@@ -52,7 +52,9 @@ def test_near_match_is_uncertain_with_candidate_fields():
 def test_real_0849_pair_stays_a_non_winner():
     # Two genuinely different Carlmont winners score 0.849 — the threshold
     # must sit above that, or every sibling article floods uncertain.csv.
-    v = classify(_r("The art of preservation: Glass eye making", author="May Lin",
+    # A different author keeps the author+date rule out of it, so only the
+    # title threshold decides.
+    v = classify(_r("The art of preservation: Glass eye making", author="Zed Zhu",
                     published="2026-01-06"),
                  [_w("The art of preservation: Fanmaking", author="May Lin",
                      published="2026-01-05")])
@@ -128,3 +130,35 @@ def test_single_exact_title_with_same_date_but_other_byline_is_a_winner():
     v = classify(_r("Don’t Look Away", author="The Editorial Board"),
                  [_w("Don’t Look Away", author="Staff")])
     assert v.label == "winner"
+
+
+def test_author_date_rule_allows_the_republish_lag():
+    # Measured on real Carlmont winners: Best of SNO republishes 3-40 days
+    # after the school (school 2026-02-27 -> SNO 2026-03-27). A reworded
+    # winner must still be surfaced, not filed as a non_winner.
+    v = classify(_r("Energy drinks: how students power through", published="2026-02-27"),
+                 [_w("Energy culture: How students are powering through",
+                     published="2026-03-27")])
+    assert v.label == "uncertain" and v.reason == "author-date"
+
+
+def test_republish_before_the_school_date_does_not_corroborate():
+    v = classify(_r("Reworded headline", published="2026-03-10"),
+                 [_w("Original headline", published="2026-03-01")])
+    assert v.label == "non_winner"
+
+
+def test_lag_beyond_the_window_does_not_corroborate():
+    v = classify(_r("Reworded headline", published="2026-03-01"),
+                 [_w("Original headline", published="2026-06-01")])  # 92 days
+    assert v.label == "non_winner"
+
+
+def test_same_titled_installment_outside_the_lag_window_is_uncertain():
+    # A recurring column by the same writer: the installment that won was
+    # republished 2026-04-20, this one ran in January. Same author is not
+    # enough — only an installment whose dates fit the republish lag can be
+    # the winning one.
+    v = classify(_r("Humans of Carlmont", published="2026-01-10"),
+                 [_w("Humans of Carlmont", published="2026-04-20")])
+    assert v.label == "uncertain" and v.reason == "title-ambiguous"
