@@ -12,6 +12,7 @@ from __future__ import annotations
 import difflib
 import html
 import logging
+import os
 import re
 import unicodedata
 from typing import NamedTuple
@@ -19,9 +20,24 @@ from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
-from . import backfill
+from . import backfill, scraper
 
 LOG = logging.getLogger("best_of_sno.layer2")
+
+# Crawled host -> school name exactly as it appears in the winners corpus
+# (verified against archive.csv 2026-10-29: 61 / 14 / 9 / 9 / 7 winners).
+SITES = {
+    "scotscoop.com": "Carlmont High School",
+    "elestoque.org": "Monta Vista High School",
+    "torreypinesfalconer.com": "Torrey Pines High School",
+    "theburlingameb.org": "Burlingame High School",
+    "harkeraquila.com": "The Harker School",
+}
+
+# Each winner lives in exactly one of these (run_backfill skips ids already
+# in new/old), so the answer key is their union — never archive.csv alone.
+CORPUS_FILES = ("archive.csv", "new.csv", "old.csv")
+_CORPUS_FIELDS = ("id", "url", "title", "published", "author")
 
 # WordPress date permalinks (/%year%/%monthnum%/...) put the YEAR first,
 # which must never be mistaken for a numeric post id.
@@ -178,3 +194,23 @@ def classify(record: dict, winners: list[dict]) -> Verdict:
         if _same_author_and_date(w, record):
             return _uncertain("author-date", w)
     return Verdict("non_winner", "", "", "", "")
+
+
+def load_winner_corpus(data_dir: str) -> dict[str, list[dict]]:
+    """Index the winners corpus (archive ∪ new ∪ old) by school name.
+
+    Keeps only the schools in ``SITES`` and projects each row to the lookup
+    fields plus a precomputed ``norm_title``; the body is dropped so the
+    ~11 MB archive is not held in memory through a multi-hour crawl.
+    Missing files are skipped.
+    """
+    schools = set(SITES.values())
+    corpus: dict[str, list[dict]] = {}
+    for name in CORPUS_FILES:
+        for row in scraper._read_rows(os.path.join(data_dir, "data", name)):
+            if row.get("school") not in schools:
+                continue
+            winner = {field: row.get(field) or "" for field in _CORPUS_FIELDS}
+            winner["norm_title"] = normalize_title(winner["title"])
+            corpus.setdefault(row["school"], []).append(winner)
+    return corpus
