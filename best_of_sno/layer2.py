@@ -9,6 +9,7 @@ docs/superpowers/specs/2026-10-29-layer2-school-site-nonwinners-design.md.
 
 from __future__ import annotations
 
+import argparse
 import csv
 import difflib
 import html
@@ -16,7 +17,9 @@ import io
 import logging
 import os
 import re
+import time
 import unicodedata
+from datetime import datetime
 from typing import NamedTuple
 from urllib.parse import urlparse
 
@@ -252,3 +255,171 @@ def append_rows(path: str, records: list[dict], columns: list[str]) -> None:
 # The checkpoint is the backfill's format exactly ({"done_ids": [...]}).
 load_layer2_state = backfill.load_backfill_state
 save_layer2_state = backfill.save_backfill_state
+
+
+CHECKPOINT_EVERY = 25  # rows between checkpoint saves, matching the backfill
+_COUNT_KEYS = (
+    "candidates", "winner", "non_winner", "uncertain", "skipped", "dropped_out_of_window",
+)
+
+
+def run_layer2(
+    data_dir: str,
+    *,
+    since: str = "2026-01-01",
+    until: str = "2026-10-10",
+    sites: list[str] | None = None,
+    limit: int | None = None,
+    delay: float = 6.0,
+    dry_run: bool = False,
+    fetch_sitemap=None,
+    fetch_page=None,
+    now: str | None = None,
+) -> dict:
+    """Crawl, label and write each site's in-window articles (spec §6).
+
+    Hosts are crawled one after another, so ``delay`` between post fetches
+    honors ``Crawl-delay`` per host. Done = the checkpoint UNION the ids in
+    layer2.csv and uncertain.csv, so a re-run never re-fetches or duplicates
+    even if the checkpoint is lost. A fetch failure is skipped WITHOUT
+    marking done (retried next run); an out-of-window post is dropped and
+    marked done. ``dry_run`` fetches sitemaps only and writes nothing.
+
+    ``fetch_sitemap``/``fetch_page`` resolve to the backfill's network
+    functions at call time, not def time, so tests of ``main`` can swap
+    them. Returns ``{"sites": {host: counts}, "totals": counts}``.
+    """
+    backfill._require_iso_date(since, "--since")
+    backfill._require_iso_date(until, "--until")
+    hosts = list(SITES) if sites is None else list(sites)
+    unknown = [h for h in hosts if h not in SITES]
+    if unknown:
+        raise ValueError(f"unknown site(s): {unknown}; choose from {list(SITES)}")
+    fetch_sitemap = fetch_sitemap or backfill.fetch_all_post_sitemaps
+    fetch_page = fetch_page or backfill.fetch_page
+    now = now or datetime.now().astimezone().isoformat()
+
+    data = os.path.join(data_dir, "data")
+    layer2_path = os.path.join(data, "layer2.csv")
+    uncertain_path = os.path.join(data, "uncertain.csv")
+    checkpoint_path = os.path.join(data, "layer2_state.json")
+
+    corpus = load_winner_corpus(data_dir)
+    done = (
+        load_layer2_state(checkpoint_path)
+        | scraper._read_ids(layer2_path)
+        | scraper._read_ids(uncertain_path)
+    )
+    res = {"sites": {}, "totals": dict.fromkeys(_COUNT_KEYS, 0)}
+    if not dry_run:
+        os.makedirs(data, exist_ok=True)
+
+    for host in hosts:
+        counts = res["sites"][host] = dict.fromkeys(_COUNT_KEYS, 0)
+        pairs: list[tuple[str, str]] = []
+        for xml_bytes in fetch_sitemap(host=host):
+            pairs.extend(backfill.parse_sitemap(xml_bytes))
+        in_window = backfill.select_candidates(pairs, since)
+        counts["candidates"] = len(in_window)
+        if dry_run:
+            LOG.info("dry-run: %s: %d candidates since %s; nothing fetched",
+                     host, len(in_window), since)
+            continue
+
+        todo = [loc for loc in in_window if post_id(loc, host) not in done]
+        if limit is not None:
+            todo = todo[:limit]
+        winners = corpus.get(SITES[host], [])
+        pending_since_save = 0
+        for i, loc in enumerate(todo, start=1):
+            pid = post_id(loc, host)
+            if pid in done:
+                continue  # loc listed twice across sub-sitemaps; already written
+            try:
+                html_bytes = fetch_page(loc)
+            except Exception as exc:  # network/HTTP failure after retries
+                LOG.warning("fetch failed, skipping (will retry next run): %s (%s)", loc, exc)
+                counts["skipped"] += 1
+                if i < len(todo):
+                    time.sleep(delay)
+                continue
+
+            record = parse_school_post(html_bytes, loc, now, since=since, host=host)
+            if record is None or (record["published"] and record["published"] > until):
+                # Before since, or after until: its win status is either out
+                # of scope or not yet settled, so it must not become a negative.
+                counts["dropped_out_of_window"] += 1
+            else:
+                # On a school's own site the host IS the source, and the
+                # byline's trailing segment is a staff role, not the school.
+                record["source_site"] = host
+                record["school"] = SITES[host]
+                verdict = classify(record, winners)
+                row = {**record, "label": verdict.label, "matched_id": verdict.matched_id}
+                if verdict.label == "uncertain":
+                    row.update(reason=verdict.reason,
+                               candidate_title=verdict.candidate_title,
+                               candidate_url=verdict.candidate_url)
+                    append_rows(uncertain_path, [row], UNCERTAIN_COLUMNS)
+                else:
+                    append_rows(layer2_path, [row], LAYER2_COLUMNS)
+                counts[verdict.label] += 1
+            done.add(pid)
+            pending_since_save += 1
+
+            if pending_since_save >= CHECKPOINT_EVERY:
+                save_layer2_state(checkpoint_path, done)
+                pending_since_save = 0
+            LOG.info("%s: fetched %d/%d (winner=%d non=%d uncertain=%d)",
+                     host, i, len(todo), counts["winner"], counts["non_winner"],
+                     counts["uncertain"])
+            if i < len(todo):
+                time.sleep(delay)
+        save_layer2_state(checkpoint_path, done)
+
+    for counts in res["sites"].values():
+        for key in _COUNT_KEYS:
+            res["totals"][key] += counts[key]
+    LOG.info("layer2 done: %s", res["totals"])
+    return res
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Best of SNO Layer 2 school-site collection")
+    parser.add_argument("--data-dir", default="best_of_sno", help="folder holding data/ and logs/")
+    parser.add_argument("--since", default="2026-01-01", help="ISO date; keep posts published on/after this")
+    parser.add_argument("--until", default="2026-10-10", help="ISO date; drop posts published after this")
+    parser.add_argument("--sites", default=None,
+                        help=f"comma-separated hosts (default: all of {', '.join(SITES)})")
+    parser.add_argument("--limit", type=int, default=None, help="cap posts fetched per site (trial runs)")
+    parser.add_argument("--delay", type=float, default=6.0, help="seconds between requests (robots crawl-delay)")
+    parser.add_argument("--dry-run", action="store_true", help="enumerate + report; fetch/write no posts")
+    args = parser.parse_args(argv)
+
+    sites = None
+    if args.sites:
+        sites = [h.strip() for h in args.sites.split(",") if h.strip()]
+        unknown = [h for h in sites if h not in SITES]
+        if unknown:
+            parser.error(f"unknown site(s): {', '.join(unknown)}; choose from {', '.join(SITES)}")
+
+    logs = os.path.join(args.data_dir, "logs")
+    os.makedirs(logs, exist_ok=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        handlers=[
+            logging.FileHandler(os.path.join(logs, "layer2.log")),
+            logging.StreamHandler(),
+        ],
+    )
+    res = run_layer2(
+        args.data_dir, since=args.since, until=args.until, sites=sites,
+        limit=args.limit, delay=args.delay, dry_run=args.dry_run,
+    )
+    LOG.info("result: %s", res)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
