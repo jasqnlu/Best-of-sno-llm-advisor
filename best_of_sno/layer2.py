@@ -83,10 +83,13 @@ def parse_school_post(
     """``backfill.parse_post`` plus the fallbacks school-site themes need.
 
     Some sites put the date in ``.sno-story-date`` instead of after the
-    byline's bullet, and append the site name to ``og:title``. Fills the
-    date from ``.sno-story-date`` when the byline gave none (re-applying the
-    ``since`` gate), strips the site-name suffix so titles match the
-    archive's, and sets ``id`` via ``post_id``.
+    byline's bullet, an author-less byline holds only its ``.time-wrapper``
+    date (no bullet, so ``parse_post`` reads the date as the author), and
+    some themes append the site name to ``og:title``. When the byline gave
+    no date, takes it from the byline's own ``.time-wrapper``, else from
+    ``.sno-story-date`` (re-applying the ``since`` gate) and clears a
+    date-only byline's bogus author/school; strips the site-name suffix so
+    titles match the archive's; and sets ``id`` via ``post_id``.
     """
     record = backfill.parse_post(html, url, scraped_at, since=since, host=host)
     if record is None:
@@ -94,11 +97,19 @@ def parse_school_post(
     soup = BeautifulSoup(html, "html.parser")
 
     if not record["published"]:
-        date_el = soup.select_one(".sno-story-date")
+        # Scoped to the byline: other .time-wrapper elements on the page
+        # belong to sidebar widgets and carry other stories' dates.
+        byline_el = soup.select_one(".sno-story-byline")
+        date_el = (
+            byline_el.select_one(".time-wrapper") if byline_el is not None else None
+        ) or soup.select_one(".sno-story-date")
         if date_el is not None:
-            record["published"] = backfill._date_to_iso(date_el.get_text(" ", strip=True))
+            date_text = date_el.get_text(" ", strip=True)
+            record["published"] = backfill._date_to_iso(date_text)
             if record["published"] and record["published"] < since:
                 return None
+            if byline_el is not None and byline_el.get_text(" ", strip=True) == date_text:
+                record["author"] = record["school"] = ""  # date-only byline: no author
 
     site = soup.find("meta", attrs={"property": "og:site_name"})
     site_name = ((site.get("content") if site else "") or "").strip()

@@ -72,3 +72,32 @@ def test_id_comes_from_post_id():
     r = parse_school_post(HARKER, H_URL, NOW, since="2026-01-01", host="harkeraquila.com")
     assert r["id"] == "https://harkeraquila.com/?p=100825"
     assert r["word_count"] > 0
+
+
+def _date_only_byline(date):
+    # Real Scot Scoop markup for an article with no author: the byline holds
+    # only the date, in .time-wrapper, with no "•" separator.
+    return (
+        "<html><head><meta property='og:title' content='Club news'></head><body>"
+        "<div class='sno-story-byline byline-post-196405'>"
+        f"<div class='byline-inner-container'> <span class='time-wrapper'>{date}</span>"
+        "</div></div>"
+        "<span class='time-wrapper'>January 1, 2030</span>"  # unrelated widget
+        "<div class='sno-story-body-content'><p>Club members met.</p></div>"
+        "</body></html>"
+    ).encode()
+
+
+def test_date_only_byline_from_before_since_is_dropped():
+    # Before the fix: published="", author="October 8" -> filed as "undated".
+    html = _date_only_byline("October 8, 2019")
+    assert parse_school_post(html, "https://scotscoop.com/argument-club/", NOW,
+                             since="2026-01-01", host="scotscoop.com") is None
+
+
+def test_date_only_byline_in_window_is_dated_with_no_author():
+    html = _date_only_byline("March 3, 2026")
+    r = parse_school_post(html, "https://scotscoop.com/club-news/", NOW,
+                          since="2026-01-01", host="scotscoop.com")
+    assert r["published"] == "2026-03-03"
+    assert r["author"] == "" and r["school"] == ""
