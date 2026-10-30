@@ -15,4 +15,5 @@ best_of_sno/data/*.csv
 best_of_sno/data/*.tmp
 best_of_sno/data/state.json
 best_of_sno/data/backfill_state.json
+best_of_sno/data/layer2_state.json
 best_of_sno/logs/*.log
