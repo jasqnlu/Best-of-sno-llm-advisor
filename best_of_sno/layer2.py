@@ -169,7 +169,9 @@ def classify(record: dict, winners: list[dict]) -> Verdict:
     ``winners`` rows carry ``id``, ``url``, ``title``, ``published``,
     ``author`` and a precomputed ``norm_title``. Rules, in order: undated ->
     uncertain; one exact normalized-title match -> winner; several -> the one
-    sharing author+date, else uncertain; a near-match title -> uncertain; a
+    sharing author+date, else uncertain (a single match must share the
+    author OR the date, else it is a different same-titled article, e.g. a
+    recurring column -> uncertain); a near-match title -> uncertain; a
     winner sharing author+date under a different title -> uncertain;
     otherwise non_winner. The record's own ``school`` cell is never read —
     the caller picks ``winners`` by host.
@@ -180,7 +182,11 @@ def classify(record: dict, winners: list[dict]) -> Verdict:
     title = normalize_title(record["title"])
     exact = [w for w in winners if w["norm_title"] == title]
     if len(exact) == 1:
-        return Verdict("winner", exact[0]["id"], "", "", "")
+        winner = exact[0]
+        if (_same_author(winner["author"], record["author"])
+                or winner["published"][:10] == record["published"][:10]):
+            return Verdict("winner", winner["id"], "", "", "")
+        return _uncertain("title-ambiguous", winner)
     if exact:
         corroborated = [w for w in exact if _same_author_and_date(w, record)]
         if len(corroborated) == 1:
@@ -330,6 +336,8 @@ def run_layer2(
         if limit is not None:
             todo = todo[:limit]
         winners = corpus.get(SITES[host], [])
+        if todo:
+            time.sleep(delay)  # Crawl-delay after this host's sitemap fetches
         pending_since_save = 0
         for i, loc in enumerate(todo, start=1):
             pid = post_id(loc, host)

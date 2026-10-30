@@ -108,3 +108,23 @@ def test_duplicate_title_that_cannot_be_disambiguated_is_uncertain():
                _w("Same Title", id="B", author="Ada Lee", published="2026-03-03")]
     v = classify(_r("Same Title", author="Zed Zhu", published="2026-09-09"), winners)
     assert v.label == "uncertain" and v.reason == "title-ambiguous"
+
+
+def test_single_exact_title_with_different_author_and_date_is_uncertain():
+    # A recurring headline: one installment won, this is a different one.
+    # It must not become a false-positive winner (spec §8), nor a negative.
+    v = classify(_r("Humans of Carlmont", author="Zed Zhu", published="2026-09-09"),
+                 [_w("Humans of Carlmont", author="May Lin", published="2026-04-01")])
+    assert v.label == "uncertain" and v.reason == "title-ambiguous"
+
+
+def test_single_exact_title_with_same_author_but_shifted_date_is_a_winner():
+    v = classify(_r("Don’t Look Away", published="2026-03-04"),
+                 [_w("Don’t Look Away", published="2026-03-03")])
+    assert v.label == "winner"
+
+
+def test_single_exact_title_with_same_date_but_other_byline_is_a_winner():
+    v = classify(_r("Don’t Look Away", author="The Editorial Board"),
+                 [_w("Don’t Look Away", author="Staff")])
+    assert v.label == "winner"
