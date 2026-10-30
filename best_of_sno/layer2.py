@@ -9,8 +9,12 @@ docs/superpowers/specs/2026-10-29-layer2-school-site-nonwinners-design.md.
 
 from __future__ import annotations
 
+import difflib
+import html
 import logging
 import re
+import unicodedata
+from typing import NamedTuple
 from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
@@ -80,3 +84,97 @@ def parse_school_post(
     record["title"] = _strip_site_suffix(record["title"], site_name)
     record["id"] = post_id(url, host)
     return record
+
+
+# difflib ratio at or above which two normalized titles are a near-match.
+# Pinned against the real archive: across all 2,014 intra-school pairs of
+# winner titles, the closest pair of DISTINCT titles scores 0.849 ("The art
+# of preservation: Fanmaking" vs "...: Glass eye making"), so 0.90 clears
+# every real negative while 0.85 would not.
+NEARMATCH_RATIO = 0.90
+
+_WS_RE = re.compile(r"\s+")
+
+
+class Verdict(NamedTuple):
+    """How one school-site article is labeled against the winners corpus."""
+
+    label: str  # "winner" | "non_winner" | "uncertain"
+    matched_id: str  # corpus id of the exact match, else ""
+    reason: str  # "" | "undated" | "title-nearmatch" | "author-date" | "title-ambiguous"
+    candidate_title: str
+    candidate_url: str
+
+
+def normalize_title(title: str | None) -> str:
+    """Comparable form of a title: entities unescaped, every Unicode
+    punctuation mark replaced by a space (so "art—the" does not weld into
+    one word, and "don't" / "don’t" both become "don t"), whitespace
+    collapsed, lowercased."""
+    text = html.unescape(title or "")
+    text = "".join(" " if unicodedata.category(ch).startswith("P") else ch for ch in text)
+    return _WS_RE.sub(" ", text).strip().lower()
+
+
+def _same_author(winner_author: str, record_author: str) -> bool:
+    """True if the winner's author appears as whole words in the record's.
+
+    School-site bylines can carry a staff role ("Liana Barooah , Sports and
+    Photo Editor") that the Best of SNO byline does not, so equality would
+    miss; whole-token containment matches the name without letting "Sam Li"
+    match "Sam Lin".
+    """
+    wa, ra = normalize_title(winner_author), normalize_title(record_author)
+    return bool(wa) and f" {wa} " in f" {ra} "
+
+
+def _same_author_and_date(winner: dict, record: dict) -> bool:
+    # [:10] because daily-scraper corpus rows store a full ISO datetime
+    # while backfilled and school-site rows store YYYY-MM-DD.
+    return (
+        _same_author(winner["author"], record["author"])
+        and bool(record["published"])
+        and winner["published"][:10] == record["published"][:10]
+    )
+
+
+def _uncertain(reason: str, winner: dict) -> Verdict:
+    return Verdict("uncertain", winner["id"], reason, winner["title"], winner["url"])
+
+
+def classify(record: dict, winners: list[dict]) -> Verdict:
+    """Label ``record`` against its school's corpus winners (spec §6.4).
+
+    ``winners`` rows carry ``id``, ``url``, ``title``, ``published``,
+    ``author`` and a precomputed ``norm_title``. Rules, in order: undated ->
+    uncertain; one exact normalized-title match -> winner; several -> the one
+    sharing author+date, else uncertain; a near-match title -> uncertain; a
+    winner sharing author+date under a different title -> uncertain;
+    otherwise non_winner. The record's own ``school`` cell is never read —
+    the caller picks ``winners`` by host.
+    """
+    if not record["published"]:
+        return Verdict("uncertain", "", "undated", "", "")
+
+    title = normalize_title(record["title"])
+    exact = [w for w in winners if w["norm_title"] == title]
+    if len(exact) == 1:
+        return Verdict("winner", exact[0]["id"], "", "", "")
+    if exact:
+        corroborated = [w for w in exact if _same_author_and_date(w, record)]
+        if len(corroborated) == 1:
+            return Verdict("winner", corroborated[0]["id"], "", "", "")
+        return _uncertain("title-ambiguous", exact[0])
+
+    best, best_ratio = None, 0.0
+    for w in winners:
+        ratio = difflib.SequenceMatcher(None, title, w["norm_title"]).ratio()
+        if ratio > best_ratio:
+            best, best_ratio = w, ratio
+    if best is not None and best_ratio >= NEARMATCH_RATIO:
+        return _uncertain("title-nearmatch", best)
+
+    for w in winners:
+        if _same_author_and_date(w, record):
+            return _uncertain("author-date", w)
+    return Verdict("non_winner", "", "", "", "")
