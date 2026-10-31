@@ -67,7 +67,7 @@ def test_corpus_drops_body_and_precomputes_norm_title(tmp_path):
     _write(tmp_path / "data" / "archive.csv",
            [_row("A", "Don’t Look Away", "Carlmont High School")])
     w = load_winner_corpus(str(tmp_path))["Carlmont High School"][0]
-    assert set(w) == {"id", "url", "title", "published", "author", "norm_title"}
+    assert set(w) == {"id", "url", "title", "published", "author", "norm_title", "shingles"}
     assert w["norm_title"] == normalize_title("Don’t Look Away")
 
 
