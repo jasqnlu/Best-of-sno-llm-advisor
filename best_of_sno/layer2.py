@@ -30,10 +30,10 @@ from . import backfill, scraper
 LOG = logging.getLogger("best_of_sno.layer2")
 
 # Crawled host -> school name exactly as it appears in the winners corpus
-# (verified against archive.csv 2026-10-29: 61 / 14 / 9 / 9 / 7 winners).
+# (verified against archive.csv 2026-10-29). El Estoque (Monta Vista) was
+# dropped 2026-10-31 after it began refusing the crawler with HTTP 403.
 SITES = {
     "scotscoop.com": "Carlmont High School",
-    "elestoque.org": "Monta Vista High School",
     "torreypinesfalconer.com": "Torrey Pines High School",
     "theburlingameb.org": "Burlingame High School",
     "harkeraquila.com": "The Harker School",
@@ -68,6 +68,55 @@ def post_id(url: str, host: str) -> str:
     return f"https://{host}/{path}/"
 
 
+# SNO's long-form ("split") story template has no .sno-story-body-content:
+# the article is a run of .sno-slideshow-segment blocks (text, photo,
+# quote, info box). Measured 2026-10-31: 15 of 97 matched winners used it.
+_SEGMENT_NOISE = (
+    "script, style, noscript, iframe, .sno-story-media-caption, "
+    ".sno-story-media-photo-credit, .photo-credit, .embed-credit, "
+    ".slideshow-title"  # a gallery widget's "Gallery • 21 Photos" label
+)
+
+# An audio/video-led post: a player inside the story and almost no text.
+# Real podcast show notes and video blurbs run 8-152 words; the shortest
+# written article with an embedded player in the fixtures runs 530.
+MEDIA_MAX_WORDS = 200
+_MEDIA_HOST_RE = re.compile(
+    r"youtube(-nocookie)?\.com|youtu\.be|vimeo\.com|soundcloud\.com|spotify\.com|"
+    r"podbean\.com|anchor\.fm|podcasts\.apple\.com|buzzsprout\.com|libsyn\.com|"
+    r"simplecast\.com|megaphone\.fm|spreaker\.com|riverside\.fm"
+)
+
+
+def _longform_body(soup: BeautifulSoup) -> str:
+    """Text of every long-form segment in page order, minus photo captions,
+    credits and embeds. Segments are collected page-wide because the
+    template's loose nesting leaves only the first inside its wrapper."""
+    parts = []
+    for segment in soup.select(".sno-slideshow-segment"):
+        for noise in segment.select(_SEGMENT_NOISE):
+            noise.decompose()
+        parts.append(segment.get_text(" ", strip=True))
+    return scraper.strip_html(" ".join(parts))
+
+
+def is_media_only(html: bytes, word_count: int) -> bool:
+    """True for a podcast or video post: an audio/video player inside the
+    story and fewer than ``MEDIA_MAX_WORDS`` words of text. A written story
+    that embeds a player keeps its text and is not media-only."""
+    if word_count >= MEDIA_MAX_WORDS:
+        return False
+    story = BeautifulSoup(html, "html.parser").select_one(".sno-story-wrap, .sno-story")
+    if story is None:
+        return False
+    if story.find(["video", "audio"]) is not None:
+        return True
+    return any(
+        _MEDIA_HOST_RE.search(frame.get("src") or frame.get("data-src") or "")
+        for frame in story.find_all("iframe")
+    )
+
+
 def _strip_site_suffix(title: str, site_name: str) -> str:
     """Drop a trailing ``" - <site name>"`` (or ``|``/en/em dash) from a title."""
     if site_name:
@@ -89,12 +138,17 @@ def parse_school_post(
     no date, takes it from the byline's own ``.time-wrapper``, else from
     ``.sno-story-date`` (re-applying the ``since`` gate) and clears a
     date-only byline's bogus author/school; strips the site-name suffix so
-    titles match the archive's; and sets ``id`` via ``post_id``.
+    titles match the archive's; reads a long-form story's segments when the
+    page has no standard body; and sets ``id`` via ``post_id``.
     """
     record = backfill.parse_post(html, url, scraped_at, since=since, host=host)
     if record is None:
         return None
     soup = BeautifulSoup(html, "html.parser")
+
+    if not record["body"]:
+        record["body"] = _longform_body(soup)
+        record["word_count"] = scraper.word_count(record["body"])
 
     if not record["published"]:
         # Scoped to the byline: other .time-wrapper elements on the page
@@ -378,6 +432,7 @@ DEFAULT_UNTIL = "2026-09-15"
 _CORPUS_START_SLACK_DAYS = 7
 _COUNT_KEYS = (
     "candidates", "winner", "non_winner", "uncertain", "skipped", "dropped_out_of_window",
+    "dropped_media",
 )
 
 
@@ -509,6 +564,9 @@ def run_layer2(
                 # Before since, or after until: its win status is either out
                 # of scope or not yet settled, so it must not become a negative.
                 counts["dropped_out_of_window"] += 1
+            elif is_media_only(html_bytes, record["word_count"]):
+                # A podcast or video: almost no text to learn from or judge.
+                counts["dropped_media"] += 1
             else:
                 # On a school's own site the host IS the source, and the
                 # byline's trailing segment is a staff role, not the school.
@@ -590,6 +648,37 @@ def relabel_uncertain(data_dir: str) -> dict:
     return counts
 
 
+def forget_thin(data_dir: str, sites: list[str] | None = None,
+                max_words: int = MEDIA_MAX_WORDS) -> int:
+    """Remove rows under ``max_words`` words (for ``sites``, default all)
+    from layer2.csv, uncertain.csv and the checkpoint, so the next crawl
+    re-fetches them with the current parser. Returns how many were removed.
+
+    The rows are written out of the CSVs before the checkpoint forgets
+    them; either way a crash leaves them not-done, so a crawl re-fetches.
+    """
+    data = os.path.join(data_dir, "data")
+    hosts = set(SITES if sites is None else sites)
+    forgotten: set[str] = set()
+    for name, columns in (("layer2.csv", LAYER2_COLUMNS), ("uncertain.csv", UNCERTAIN_COLUMNS)):
+        path = os.path.join(data, name)
+        rows = scraper._read_rows(path)
+        keep = []
+        for row in rows:
+            if row.get("source_site") in hosts and int(row.get("word_count") or 0) < max_words:
+                forgotten.add(row["id"])
+            else:
+                keep.append(row)
+        if len(keep) != len(rows):
+            scraper._atomic_write_text(path, _rows_to_csv_text(keep, columns))
+    checkpoint = os.path.join(data, "layer2_state.json")
+    done = load_layer2_state(checkpoint)
+    if done & forgotten:
+        save_layer2_state(checkpoint, done - forgotten)
+    LOG.info("forgot %d thin rows for re-fetch", len(forgotten))
+    return len(forgotten)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Best of SNO Layer 2 school-site collection")
     parser.add_argument("--data-dir", default="best_of_sno", help="folder holding data/ and logs/")
@@ -600,6 +689,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=None, help="cap posts fetched per site (trial runs)")
     parser.add_argument("--delay", type=float, default=6.0, help="seconds between requests (robots crawl-delay)")
     parser.add_argument("--dry-run", action="store_true", help="enumerate + report; fetch/write no posts")
+    parser.add_argument("--refetch-thin", action="store_true",
+                        help=f"re-fetch rows under {MEDIA_MAX_WORDS} words with the current parser")
     parser.add_argument("--relabel", action="store_true",
                         help="re-judge uncertain.csv against the corpus offline; fetch nothing")
     args = parser.parse_args(argv)
@@ -625,6 +716,8 @@ def main(argv: list[str] | None = None) -> int:
         LOG.info("result: %s", relabel_uncertain(args.data_dir))
         return 0
     try:
+        if args.refetch_thin:
+            forget_thin(args.data_dir, sites)
         res = run_layer2(
             args.data_dir, since=args.since, until=args.until, sites=sites,
             limit=args.limit, delay=args.delay, dry_run=args.dry_run,
