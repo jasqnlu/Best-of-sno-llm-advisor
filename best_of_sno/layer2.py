@@ -135,6 +135,20 @@ MAX_REPUBLISH_LAG_DAYS = 60
 
 _WS_RE = re.compile(r"\s+")
 
+# Body-text evidence (added 2026-10-31). A school article and its Best of
+# SNO republish share almost all their text, so 5-word-shingle containment
+# settles what titles and bylines cannot. Measured on the full crawl: the 81
+# matched winners with real text on both sides overlap 0.90-0.98, the 200
+# author-date look-alikes 0.01 or less, the one retitled winner 0.97.
+SHINGLE_WORDS = 5
+# Fewer shingles than this is no evidence: Best of SNO keeps only a 35-word
+# "view this story on the original site" stub for podcast / long-form
+# stories, and some school pages have no parsable body.
+MIN_SHINGLES = 50
+BODY_MATCH = 0.6  # at or above: the same article
+BODY_MISMATCH = 0.2  # at or below: a different article
+_WORD_RE = re.compile(r"\w+")
+
 
 class Verdict(NamedTuple):
     """How one school-site article is labeled against the winners corpus."""
@@ -154,6 +168,31 @@ def normalize_title(title: str | None) -> str:
     text = html.unescape(title or "")
     text = "".join(" " if unicodedata.category(ch).startswith("P") else ch for ch in text)
     return _WS_RE.sub(" ", text).strip().lower()
+
+
+def text_shingles(text: str | None) -> frozenset[tuple[str, ...]]:
+    """The set of overlapping ``SHINGLE_WORDS``-word runs in ``text``,
+    case-folded, punctuation ignored."""
+    words = _WORD_RE.findall((text or "").casefold())
+    n = SHINGLE_WORDS
+    return frozenset(tuple(words[i:i + n]) for i in range(len(words) - n + 1))
+
+
+def body_overlap(a: frozenset, b: frozenset) -> float | None:
+    """Share of the shorter text's shingles found in the other (containment,
+    so a republish with an added note still scores high). ``None`` when
+    either side is too short to count as evidence."""
+    if len(a) < MIN_SHINGLES or len(b) < MIN_SHINGLES:
+        return None
+    return len(a & b) / min(len(a), len(b))
+
+
+def _body_says(record_shingles: frozenset, winner: dict) -> bool | None:
+    """True = same article, False = a different one, None = can't tell."""
+    overlap = body_overlap(record_shingles, winner.get("shingles", frozenset()))
+    if overlap is None or BODY_MISMATCH < overlap < BODY_MATCH:
+        return None
+    return overlap >= BODY_MATCH
 
 
 def _same_author(winner_author: str, record_author: str) -> bool:
@@ -194,11 +233,18 @@ def _uncertain(reason: str, winner: dict) -> Verdict:
     return Verdict("uncertain", winner["id"], reason, winner["title"], winner["url"])
 
 
-def classify(record: dict, winners: list[dict]) -> Verdict:
+def classify(record: dict, winners: list[dict], claimed=frozenset()) -> Verdict:
     """Label ``record`` against its school's corpus winners (spec §6.4).
 
     ``winners`` rows carry ``id``, ``url``, ``title``, ``published``,
-    ``author`` and a precomputed ``norm_title``. Rules, in order: undated ->
+    ``author``, a precomputed ``norm_title`` and body ``shingles``. Wherever
+    a rule below would return uncertain for one candidate, the article bodies
+    are compared first: the same text -> winner, clearly different text ->
+    that candidate is ruled out, too little text -> uncertain as before.
+    ``claimed`` holds corpus ids another article already matched as a
+    winner; such a winner is skipped by the author-date rule only (a repost
+    under the same title must still match it).
+    Rules, in order: undated ->
     uncertain; one exact normalized-title match -> winner; several -> the one
     sharing author+date, else uncertain (a single match must also fit the
     republish lag, else it is a different same-titled article, e.g. another
@@ -212,29 +258,52 @@ def classify(record: dict, winners: list[dict]) -> Verdict:
         return Verdict("uncertain", "", "undated", "", "")
 
     title = normalize_title(record["title"])
+    shingles = text_shingles(record.get("body"))
+    ruled_out: list[dict] = []  # candidates whose body is a different article
+
+    def remaining(ws):
+        return [w for w in ws if not any(w is r for r in ruled_out)]
+
+    def settle(candidates: list[dict], reason: str) -> Verdict | None:
+        """Body-check each candidate in order: a match wins, a mismatch is
+        ruled out, the first undecidable one makes the verdict uncertain."""
+        unknown = None
+        for w in candidates:
+            says = _body_says(shingles, w)
+            if says:
+                return Verdict("winner", w["id"], "", "", "")
+            if says is None:
+                unknown = unknown or w
+            else:
+                ruled_out.append(w)
+        return _uncertain(reason, unknown) if unknown else None
+
     exact = [w for w in winners if w["norm_title"] == title]
     if len(exact) == 1:
         winner = exact[0]
         if _dates_corroborate(winner["published"], record["published"]):
             return Verdict("winner", winner["id"], "", "", "")
-        return _uncertain("title-ambiguous", winner)
-    if exact:
+        verdict = settle(exact, "title-ambiguous")
+        if verdict:
+            return verdict
+    elif exact:
         corroborated = [w for w in exact if _same_author_and_date(w, record)]
         if len(corroborated) == 1:
             return Verdict("winner", corroborated[0]["id"], "", "", "")
         return _uncertain("title-ambiguous", exact[0])
 
-    best, best_ratio = None, 0.0
-    for w in winners:
-        ratio = difflib.SequenceMatcher(None, title, w["norm_title"]).ratio()
-        if ratio > best_ratio:
-            best, best_ratio = w, ratio
-    if best is not None and best_ratio >= NEARMATCH_RATIO:
-        return _uncertain("title-nearmatch", best)
+    scored = [(difflib.SequenceMatcher(None, title, w["norm_title"]).ratio(), w)
+              for w in remaining(winners)]
+    near = [w for ratio, w in sorted(scored, key=lambda p: -p[0]) if ratio >= NEARMATCH_RATIO]
+    verdict = settle(near, "title-nearmatch")
+    if verdict:
+        return verdict
 
-    for w in winners:
-        if _same_author_and_date(w, record):
-            return _uncertain("author-date", w)
+    same_writer = [w for w in remaining(winners)
+                   if w["id"] not in claimed and _same_author_and_date(w, record)]
+    verdict = settle(same_writer, "author-date")
+    if verdict:
+        return verdict
     return Verdict("non_winner", "", "", "", "")
 
 
@@ -242,8 +311,8 @@ def load_winner_corpus(data_dir: str) -> dict[str, list[dict]]:
     """Index the winners corpus (archive ∪ new ∪ old) by school name.
 
     Keeps only the schools in ``SITES`` and projects each row to the lookup
-    fields plus a precomputed ``norm_title``; the body is dropped so the
-    ~11 MB archive is not held in memory through a multi-hour crawl.
+    fields plus a precomputed ``norm_title`` and body ``shingles``; the body
+    text itself is dropped so it is not held through a multi-hour crawl.
     Missing files are skipped.
     """
     schools = set(SITES.values())
@@ -254,6 +323,7 @@ def load_winner_corpus(data_dir: str) -> dict[str, list[dict]]:
                 continue
             winner = {field: row.get(field) or "" for field in _CORPUS_FIELDS}
             winner["norm_title"] = normalize_title(winner["title"])
+            winner["shingles"] = text_shingles(row.get("body"))
             corpus.setdefault(row["school"], []).append(winner)
     return corpus
 
@@ -474,6 +544,52 @@ def run_layer2(
     return res
 
 
+def relabel_uncertain(data_dir: str) -> dict:
+    """Re-judge every row of uncertain.csv against the corpus, offline.
+
+    Winners already matched in layer2.csv are passed to ``classify`` as
+    ``claimed``. Rows the current ``classify`` now settles move to layer2.csv; the rest
+    stay, with their reason and candidate refreshed. Nothing is fetched: the
+    stored title, byline, date and body are the evidence. layer2.csv is
+    written before uncertain.csv, and ids already in layer2.csv are not
+    appended again, so a crash between the two writes is repaired by
+    re-running. Returns how many rows got each label.
+    """
+    data = os.path.join(data_dir, "data")
+    layer2_path = os.path.join(data, "layer2.csv")
+    uncertain_path = os.path.join(data, "uncertain.csv")
+    counts = {"winner": 0, "non_winner": 0, "uncertain": 0}
+    rows = scraper._read_rows(uncertain_path)
+    if not rows:
+        return counts
+
+    corpus = load_winner_corpus(data_dir)
+    labeled = scraper._read_rows(layer2_path)
+    have = {row["id"] for row in labeled}
+    claimed = {row["matched_id"] for row in labeled if row.get("label") == "winner"}
+    moved, kept = [], []
+    for row in rows:
+        school = SITES.get(row.get("source_site", ""), row.get("school", ""))
+        verdict = classify(row, corpus.get(school, []), claimed)
+        counts[verdict.label] += 1
+        if verdict.label == "winner":
+            claimed.add(verdict.matched_id)
+        if verdict.label == "uncertain":
+            row.update(matched_id=verdict.matched_id, reason=verdict.reason,
+                       candidate_title=verdict.candidate_title,
+                       candidate_url=verdict.candidate_url)
+            kept.append(row)
+        elif row["id"] not in have:
+            have.add(row["id"])
+            moved.append({**row, "label": verdict.label, "matched_id": verdict.matched_id})
+
+    if moved:
+        scraper._atomic_write_text(layer2_path, _rows_to_csv_text(labeled + moved, LAYER2_COLUMNS))
+    scraper._atomic_write_text(uncertain_path, _rows_to_csv_text(kept, UNCERTAIN_COLUMNS))
+    LOG.info("relabel: %s", counts)
+    return counts
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Best of SNO Layer 2 school-site collection")
     parser.add_argument("--data-dir", default="best_of_sno", help="folder holding data/ and logs/")
@@ -484,6 +600,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=None, help="cap posts fetched per site (trial runs)")
     parser.add_argument("--delay", type=float, default=6.0, help="seconds between requests (robots crawl-delay)")
     parser.add_argument("--dry-run", action="store_true", help="enumerate + report; fetch/write no posts")
+    parser.add_argument("--relabel", action="store_true",
+                        help="re-judge uncertain.csv against the corpus offline; fetch nothing")
     args = parser.parse_args(argv)
 
     sites = None
@@ -503,6 +621,9 @@ def main(argv: list[str] | None = None) -> int:
             logging.StreamHandler(),
         ],
     )
+    if args.relabel:
+        LOG.info("result: %s", relabel_uncertain(args.data_dir))
+        return 0
     try:
         res = run_layer2(
             args.data_dir, since=args.since, until=args.until, sites=sites,
