@@ -30,10 +30,10 @@ from . import backfill, scraper
 LOG = logging.getLogger("best_of_sno.layer2")
 
 # Crawled host -> school name exactly as it appears in the winners corpus
-# (verified against archive.csv 2026-10-29: 61 / 14 / 9 / 9 / 7 winners).
+# (verified against archive.csv 2026-10-29). El Estoque (Monta Vista) was
+# dropped 2026-10-31 after it began refusing the crawler with HTTP 403.
 SITES = {
     "scotscoop.com": "Carlmont High School",
-    "elestoque.org": "Monta Vista High School",
     "torreypinesfalconer.com": "Torrey Pines High School",
     "theburlingameb.org": "Burlingame High School",
     "harkeraquila.com": "The Harker School",
@@ -73,7 +73,8 @@ def post_id(url: str, host: str) -> str:
 # quote, info box). Measured 2026-10-31: 15 of 97 matched winners used it.
 _SEGMENT_NOISE = (
     "script, style, noscript, iframe, .sno-story-media-caption, "
-    ".sno-story-media-photo-credit, .photo-credit, .embed-credit"
+    ".sno-story-media-photo-credit, .photo-credit, .embed-credit, "
+    ".slideshow-title"  # a gallery widget's "Gallery • 21 Photos" label
 )
 
 # An audio/video-led post: a player inside the story and almost no text.

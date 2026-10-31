@@ -47,6 +47,30 @@ def test_every_segment_is_read_in_order_without_photo_credits():
     assert "Jason Lu" not in body  # embed credit
 
 
+@pytest.mark.parametrize("name,headings", [
+    ("scotscoop_longform.html", ["Who cares?", "Walking to the next exam room",
+                                 "Soaring vet bills"]),
+    ("theburlingameb_segments.html", ["Burlingame’s Flock Cameras",
+                                      "The National Security Risks",
+                                      "Burlingame’s Safeguards"]),
+    ("scotscoop_feature_with_audio.html", [
+        "The delicate frontiers of traditional fanmaking and hatmaking",
+        "Tutorial: How to make a fan", "Step 1: Choose a reference design",
+        "Step 6: Assemble and align"]),
+])
+def test_section_headings_are_kept_in_reading_order(name, headings):
+    # Subheads (h2), segment headings and info-box step titles are part of
+    # the story's structure and stay in the body, each before its section.
+    body = _parse(name, "https://x.org/a/", "x.org")["body"]
+    positions = [body.index(h) for h in headings]
+    assert positions == sorted(positions)
+
+
+def test_gallery_widget_label_is_not_story_text():
+    body = _parse("scotscoop_feature_with_audio.html", "https://x.org/a/", "x.org")["body"]
+    assert "Gallery •" not in body
+
+
 def test_standard_story_body_is_unchanged():
     r = _parse("scotscoop_post.html", "https://scotscoop.com/a/", "scotscoop.com")
     assert r["word_count"] == 133
@@ -155,7 +179,7 @@ def _seed_thin(tmp_path):
         {"id": "T1", "source_site": "scotscoop.com", "word_count": "0", "label": "winner"},
         {"id": "T2", "source_site": "scotscoop.com", "word_count": "55", "label": "non_winner"},
         {"id": "K1", "source_site": "scotscoop.com", "word_count": "800", "label": "non_winner"},
-        {"id": "E1", "source_site": "elestoque.org", "word_count": "10", "label": "non_winner"},
+        {"id": "E1", "source_site": "theburlingameb.org", "word_count": "10", "label": "non_winner"},
     ], LAYER2_COLUMNS)
     _write(d / "uncertain.csv", [
         {"id": "U1", "source_site": "scotscoop.com", "word_count": "9", "label": "uncertain",

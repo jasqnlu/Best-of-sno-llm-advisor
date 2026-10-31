@@ -321,3 +321,23 @@ conflict with earlier sections, this section wins.
   than the corpus start (with 7 days' slack).
 - **`uncertain.csv` reasons** are `undated`, `title-nearmatch`,
   `author-date` and `title-ambiguous` (widens §7's two).
+
+## 12. Amendments (2026-10-31)
+
+- **El Estoque (Monta Vista) is dropped.** The day after the full crawl it
+  began answering every request from the crawler, robots.txt included,
+  with HTTP 403. The crawl does not try to get around a block, so the
+  owner decided not to use the site. Its rows were removed from
+  `layer2.csv` and `uncertain.csv`. Four sites remain.
+- **Long-form stories are read segment by segment.** SNO's long-form
+  ("split") template has no `.sno-story-body-content`; the story is a run
+  of `.sno-slideshow-segment` blocks. The body is every segment's text in
+  page order, including section headings (`h2`, `.segment-heading`, info-box
+  titles), minus photo captions, credits, embeds and gallery widget labels.
+- **Podcast and video posts are dropped** (`dropped_media`): an audio/video
+  player inside the story plus fewer than 200 words of text. Written
+  stories that embed a player keep their text.
+- **Uncertain labels are settled by article text** before falling back to
+  `uncertain`: 5-word-shingle overlap ≥ 0.6 → winner, ≤ 0.2 → ruled out.
+  A winner already matched by another article is skipped by the
+  author-date rule. `--relabel` re-judges `uncertain.csv` offline.
