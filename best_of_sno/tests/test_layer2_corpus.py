@@ -22,10 +22,11 @@ def _row(id_, title, school, **kw):
     return r
 
 
-def test_sites_table_has_the_five_hosts_and_school_names():
+def test_sites_table_has_the_four_hosts_and_school_names():
+    # El Estoque (Monta Vista) was dropped 2026-10-31: it began refusing the
+    # crawler (HTTP 403, robots.txt included).
     assert SITES == {
         "scotscoop.com": "Carlmont High School",
-        "elestoque.org": "Monta Vista High School",
         "torreypinesfalconer.com": "Torrey Pines High School",
         "theburlingameb.org": "Burlingame High School",
         "harkeraquila.com": "The Harker School",
@@ -36,10 +37,10 @@ def test_corpus_unions_all_three_winner_files(tmp_path):
     d = tmp_path / "data"
     _write(d / "archive.csv", [_row("A", "Archive Story", "Carlmont High School")])
     _write(d / "new.csv", [_row("N", "New Story", "Carlmont High School")])
-    _write(d / "old.csv", [_row("O", "Old Story", "Monta Vista High School")])
+    _write(d / "old.csv", [_row("O", "Old Story", "Burlingame High School")])
     corpus = load_winner_corpus(str(tmp_path))
     assert {w["id"] for w in corpus["Carlmont High School"]} == {"A", "N"}
-    assert {w["id"] for w in corpus["Monta Vista High School"]} == {"O"}
+    assert {w["id"] for w in corpus["Burlingame High School"]} == {"O"}
 
 
 def test_a_winner_only_in_new_csv_is_in_the_corpus(tmp_path):

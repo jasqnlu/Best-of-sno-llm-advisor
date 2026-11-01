@@ -60,7 +60,7 @@ def test_retitled_winner_with_the_same_body_is_a_winner():
     # Real case: "...her experience at MVHS" republished as "...at Monta Vista
     # High School" — title ratio 0.83, body overlap 0.97.
     v = classify(_r("Exchange student shares her experience at MVHS", _body(1)),
-                 [_w("Exchange student shares her experience at Monta Vista High School",
+                 [_w("Exchange student shares her experience at Burlingame High School",
                      _body(1), id="EX")])
     assert v.label == "winner" and v.matched_id == "EX" and v.reason == ""
 
@@ -151,34 +151,34 @@ def test_corpus_winners_carry_body_shingles(tmp_path):
 # --- relabel: re-judge uncertain.csv offline ----------------------------------
 
 def _seed(tmp_path):
-    school = "Monta Vista High School"
+    school = "Burlingame High School"
     _write(tmp_path / "data" / "archive.csv", [
         {"id": "EX", "url": "https://bestofsno.com/9/f/ex/", "school": school,
-         "title": "Exchange student shares her experience at Monta Vista High School",
+         "title": "Exchange student shares her experience at Burlingame High School",
          "published": "2025-12-17", "author": "Ada Lee", "body": _body(1)},
         {"id": "POD", "url": "https://bestofsno.com/8/f/pod/", "school": school,
          "title": "A podcast", "published": "2025-12-17", "author": "Bo Chen",
          "body": STUB},
     ], COLUMNS)
     _write(tmp_path / "data" / "layer2.csv", [
-        {"id": "https://elestoque.org/old/", "title": "Already labeled",
-         "label": "non_winner", "source_site": "elestoque.org"},
+        {"id": "https://theburlingameb.org/old/", "title": "Already labeled",
+         "label": "non_winner", "source_site": "theburlingameb.org"},
     ], LAYER2_COLUMNS)
 
     def u(id_, title, body, author="Ada Lee"):
         return {"id": id_, "title": title, "body": body, "published": "2025-12-04",
-                "author": author, "school": school, "source_site": "elestoque.org",
+                "author": author, "school": school, "source_site": "theburlingameb.org",
                 "label": "uncertain", "matched_id": "EX", "reason": "author-date",
                 "candidate_title": "x", "candidate_url": "y"}
 
     _write(tmp_path / "data" / "uncertain.csv", [
-        u("https://elestoque.org/exchange/", "Exchange student shares her experience at MVHS",
+        u("https://theburlingameb.org/exchange/", "Exchange student shares her experience at MVHS",
           _body(1)),
-        u("https://elestoque.org/climate/", "Climate change should not be political",
+        u("https://theburlingameb.org/climate/", "Climate change should not be political",
           _body(2)),
         # Bo Chen's only candidate is the podcast, whose stub decides nothing.
-        u("https://elestoque.org/gallery/", "Photo gallery", "", author="Bo Chen"),
-        {**u("https://elestoque.org/crossword/", "Crossword", ""), "published": "",
+        u("https://theburlingameb.org/gallery/", "Photo gallery", "", author="Bo Chen"),
+        {**u("https://theburlingameb.org/crossword/", "Crossword", ""), "published": "",
          "reason": "undated", "matched_id": ""},
     ], UNCERTAIN_COLUMNS)
 
@@ -189,17 +189,17 @@ def test_relabel_moves_settled_rows_and_keeps_the_rest(tmp_path):
     assert res == {"winner": 1, "non_winner": 1, "uncertain": 2}
 
     labeled = {r["id"]: r for r in _read(tmp_path / "data" / "layer2.csv")}
-    assert labeled["https://elestoque.org/exchange/"]["label"] == "winner"
-    assert labeled["https://elestoque.org/exchange/"]["matched_id"] == "EX"
-    assert labeled["https://elestoque.org/climate/"]["label"] == "non_winner"
-    assert labeled["https://elestoque.org/climate/"]["matched_id"] == ""
-    assert "https://elestoque.org/old/" in labeled  # existing rows kept
+    assert labeled["https://theburlingameb.org/exchange/"]["label"] == "winner"
+    assert labeled["https://theburlingameb.org/exchange/"]["matched_id"] == "EX"
+    assert labeled["https://theburlingameb.org/climate/"]["label"] == "non_winner"
+    assert labeled["https://theburlingameb.org/climate/"]["matched_id"] == ""
+    assert "https://theburlingameb.org/old/" in labeled  # existing rows kept
     assert list(_read(tmp_path / "data" / "layer2.csv")[0]) == LAYER2_COLUMNS
 
     left = {r["id"]: r for r in _read(tmp_path / "data" / "uncertain.csv")}
-    assert set(left) == {"https://elestoque.org/gallery/", "https://elestoque.org/crossword/"}
-    assert left["https://elestoque.org/gallery/"]["matched_id"] == "POD"
-    assert left["https://elestoque.org/crossword/"]["reason"] == "undated"
+    assert set(left) == {"https://theburlingameb.org/gallery/", "https://theburlingameb.org/crossword/"}
+    assert left["https://theburlingameb.org/gallery/"]["matched_id"] == "POD"
+    assert left["https://theburlingameb.org/crossword/"]["reason"] == "undated"
 
 
 def test_relabel_twice_changes_nothing_more(tmp_path):
@@ -218,11 +218,11 @@ def test_relabel_does_not_duplicate_an_id_already_in_layer2(tmp_path):
     # next relabel must not append it to layer2.csv a second time.
     _seed(tmp_path)
     rows = _read(tmp_path / "data" / "layer2.csv")
-    rows.append({"id": "https://elestoque.org/climate/", "label": "non_winner"})
+    rows.append({"id": "https://theburlingameb.org/climate/", "label": "non_winner"})
     _write(tmp_path / "data" / "layer2.csv", rows, LAYER2_COLUMNS)
     relabel_uncertain(str(tmp_path))
     ids = [r["id"] for r in _read(tmp_path / "data" / "layer2.csv")]
-    assert ids.count("https://elestoque.org/climate/") == 1
+    assert ids.count("https://theburlingameb.org/climate/") == 1
 
 
 def test_relabel_with_no_uncertain_file_is_a_no_op(tmp_path):
@@ -266,10 +266,10 @@ def test_claimed_does_not_block_an_exact_title_match():
 def test_relabel_rules_out_winners_already_in_layer2(tmp_path):
     _seed(tmp_path)
     rows = _read(tmp_path / "data" / "layer2.csv")
-    rows.append({"id": "https://elestoque.org/podcast/", "title": "A podcast",
-                 "label": "winner", "matched_id": "POD", "source_site": "elestoque.org"})
+    rows.append({"id": "https://theburlingameb.org/podcast/", "title": "A podcast",
+                 "label": "winner", "matched_id": "POD", "source_site": "theburlingameb.org"})
     _write(tmp_path / "data" / "layer2.csv", rows, LAYER2_COLUMNS)
     res = relabel_uncertain(str(tmp_path))
     labeled = {r["id"]: r for r in _read(tmp_path / "data" / "layer2.csv")}
-    assert labeled["https://elestoque.org/gallery/"]["label"] == "non_winner"
+    assert labeled["https://theburlingameb.org/gallery/"]["label"] == "non_winner"
     assert res == {"winner": 1, "non_winner": 2, "uncertain": 1}

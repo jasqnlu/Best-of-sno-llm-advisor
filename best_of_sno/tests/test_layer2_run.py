@@ -131,25 +131,26 @@ def test_article_published_after_until_is_dropped(tmp_path):
 def test_ids_never_collide_across_hosts(tmp_path):
     _seed(tmp_path)
     pages = {"https://scotscoop.com/1/news/story-1/": _page("Scotscoop story", author="Bo Chen"),
-             "https://elestoque.org/1/news/story-1/":
-                 _page("Estoque story", school="Monta Vista High School")}
-    res = run_layer2(str(tmp_path), sites=["scotscoop.com", "elestoque.org"], delay=0,
+             "https://theburlingameb.org/1/news/story-1/":
+                 _page("Burlingame story", school="Burlingame High School")}
+    res = run_layer2(str(tmp_path), sites=["scotscoop.com", "theburlingameb.org"], delay=0,
                      fetch_sitemap=lambda *, host: [_sitemap(host, [1])],
                      fetch_page=lambda u: pages[u])
     ids = {r["id"] for r in _rows(tmp_path / "data" / "layer2.csv")}
-    assert ids == {"https://scotscoop.com/?p=1", "https://elestoque.org/?p=1"}
+    assert ids == {"https://scotscoop.com/?p=1", "https://theburlingameb.org/?p=1"}
     assert res["totals"]["non_winner"] == 2
 
 
 def test_date_permalink_articles_are_all_written(tmp_path):
-    # El Estoque permalinks start with the year; ?p=<1st segment> would make
-    # every 2026 article the same id and drop all but the first as "done".
+    # Date permalinks (El Estoque used them) start with the year; ?p=<1st
+    # segment> would make every 2026 article the same id and drop all but
+    # the first as "done".
     _seed(tmp_path)
-    locs = ["https://elestoque.org/2026/01/13/news/first/",
-            "https://elestoque.org/2026/02/02/news/second/"]
+    locs = ["https://scotscoop.com/2026/01/13/news/first/",
+            "https://scotscoop.com/2026/02/02/news/second/"]
     pages = {locs[0]: _page("First story", author="Bo Chen"),
              locs[1]: _page("Second story", author="Bo Chen")}
-    run_layer2(str(tmp_path), sites=["elestoque.org"], delay=0,
+    run_layer2(str(tmp_path), sites=["scotscoop.com"], delay=0,
                fetch_sitemap=lambda *, host: [_urlset(locs)],
                fetch_page=lambda u: pages[u])
     assert len(_rows(tmp_path / "data" / "layer2.csv")) == 2
