@@ -341,3 +341,23 @@ conflict with earlier sections, this section wins.
   `uncertain`: 5-word-shingle overlap ≥ 0.6 → winner, ≤ 0.2 → ruled out.
   A winner already matched by another article is skipped by the
   author-date rule. `--relabel` re-judges `uncertain.csv` offline.
+- **Standard-template bodies are read to match Best of SNO's copies.**
+  Non-winner text must not differ from winner text in layout alone, or a
+  model can learn the source instead of the writing. Checked against the
+  matched winners' Best of SNO copies:
+  - Stray closing tags can end `.sno-story-body-content` early and push
+    the rest of the story out to any level up to `<body>`. The reader
+    climbs from the body element and reads the paragraphs, headings,
+    quotes, lists, embeds and photos that follow, stopping at the first
+    page chrome (share buttons, tags, contributor box). 3 of 70 matched
+    winners were cut short this way (e.g. 447 → 1,561 words; Best of SNO
+    has 1,569).
+  - Featured photos (`.sno-story-body-media`) and gallery widgets
+    (`.slideshowwrap`, flexslider `.inline-slideshow-area`) are dropped:
+    Best of SNO shows the featured photo above the story and leaves
+    galleries out. Plain `figure.wp-caption` captions stay, as Best of SNO
+    keeps them.
+  - Still to handle when building training data (both sources carry it,
+    so it is not a scraping fix): the in-body ad marker "Story continues
+    below advertisement" is in 1,861 of 1,862 Best of SNO bodies but only
+    in Torrey Pines' school pages. Strip it from every body.
