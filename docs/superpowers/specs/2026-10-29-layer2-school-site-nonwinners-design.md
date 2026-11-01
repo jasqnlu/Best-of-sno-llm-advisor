@@ -361,3 +361,8 @@ conflict with earlier sections, this section wins.
     so it is not a scraping fix): the in-body ad marker "Story continues
     below advertisement" is in 1,861 of 1,862 Best of SNO bodies but only
     in Torrey Pines' school pages. Strip it from every body.
+- **Raw pages are kept** (`data/pages/<host>/<url path>.html.gz`, gitignored,
+  about 50 KB each). `--reparse` rebuilds every row that has a saved page
+  with the current parser and labeler, then runs `--relabel`; it fetches
+  nothing. A parser fix then costs seconds instead of a full re-crawl.
+  Rows crawled before pages were kept stay as they are until re-fetched.
