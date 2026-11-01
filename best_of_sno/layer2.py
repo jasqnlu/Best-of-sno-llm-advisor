@@ -100,23 +100,55 @@ def _longform_body(soup: BeautifulSoup) -> str:
     return scraper.strip_html(" ".join(parts))
 
 
+_STORY_TAIL_TAGS = {"p", "h2", "h3", "h4", "h5", "h6", "blockquote", "ul", "ol"}
+
+
+def _is_story_part(el) -> bool:
+    """A paragraph, heading, quote, list, embed, photo, or empty spacer."""
+    if el.name in _STORY_TAIL_TAGS:
+        return True
+    classes = el.get("class") or []
+    return el.name == "div" and (
+        not el.get_text(strip=True) or "embedblock" in classes or "photowrap" in classes
+    )
+
+
+def _stray_story_tail(body_el) -> list[str]:
+    """Story parts a stray closing tag pushed out past ``body_el``.
+
+    The tag can close any number of enclosing elements (seen: up to
+    ``<body>`` itself), so this climbs from ``body_el`` and, at each level,
+    reads the story parts that follow, skipping styles and scripts. Healthy
+    pages follow the story with page chrome (share buttons, tags,
+    contributor box), so the first other element with text ends the walk.
+    """
+    tail = []
+    node = body_el
+    while node is not None and node.name != "[document]":
+        for sibling in node.find_next_siblings():
+            if sibling.name in ("style", "script"):
+                continue
+            if not _is_story_part(sibling):
+                return tail
+            tail.append(str(sibling))
+        node = node.parent
+    return tail
+
+
 def _standard_body(soup: BeautifulSoup) -> str:
     """Text of ``.sno-story-body-content``, repaired for two school-site quirks.
 
-    A stray closing tag in the story can end the body element early, which
-    leaves the remaining paragraphs beside it inside ``.sno-story-body``, so
-    those trailing siblings are read too (healthy pages have none with
-    text). Photo galleries are dropped whole (label, photographer and
-    captions), as Best of SNO's copies drop them. Otherwise this yields the
-    same text as ``backfill.parse_post``.
+    A stray closing tag in the story can end the body element early and
+    push the remaining paragraphs out beside it or further up the page;
+    ``_stray_story_tail`` reads them back. Photo galleries are dropped whole
+    (label, photographer and captions), as Best of SNO's copies drop them.
+    On a healthy page this yields the same text as ``backfill.parse_post``.
     """
     body_el = soup.select_one(".sno-story-body-content")
-    for gallery in body_el.parent.select(".slideshowwrap"):
+    for gallery in soup.select(".slideshowwrap"):
         (gallery.find_parent(class_="photowrap") or gallery).decompose()
-    html = body_el.decode_contents() + "".join(
-        " " + str(sibling) for sibling in body_el.find_next_siblings()
-    )
-    return scraper.strip_html(html)
+    parts = [body_el.decode_contents()] + _stray_story_tail(body_el)
+    return scraper.strip_html(" ".join(parts))
 
 
 def is_media_only(html: bytes, word_count: int) -> bool:

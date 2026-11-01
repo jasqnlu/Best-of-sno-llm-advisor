@@ -245,3 +245,26 @@ def test_inline_gallery_is_dropped_but_the_text_after_it_is_kept():
     assert "A large Avigilon multisensor dome watches over" not in r["body"]
     assert "Even students who said they broadly support cameras" in r["body"]
     assert r["word_count"] > 2000
+
+
+def test_body_survives_stray_tags_that_close_every_container():
+    # Real Scot Scoop winner (1,569 words on Best of SNO). Its stray tags close
+    # .sno-story-body and every container up to <body>, scattering the rest
+    # of the story across levels; the share buttons, contributor box and
+    # footer that follow it must not be read.
+    r = _parse("scotscoop_stray_close_tag_two_levels.html",
+               "https://scotscoop.com/after-dark-the-successes-and-challenges-of-night-shift-workers/",
+               "scotscoop.com")
+    assert r["word_count"] > 1450
+    assert "Breathing life Emily Smith was also about to go to sleep" in r["body"]
+    assert "The payoff" in r["body"]
+    assert "Elias and Smith also saw negative implications" in r["body"]
+    assert "“Being on the same page is so important,” Hetherington" in r["body"]
+    for chrome in ("Share on Facebook", "About the Contributor", "Carlmont High School 1400", "display: flex"):
+        assert chrome not in r["body"]
+
+
+def test_healthy_page_body_does_not_pick_up_page_chrome():
+    r = _parse("scotscoop_post.html", "https://scotscoop.com/x/", "scotscoop.com")
+    assert "Share on Facebook" not in r["body"]
+    assert "View Story Comments" not in r["body"]
