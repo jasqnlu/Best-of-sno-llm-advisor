@@ -106,11 +106,14 @@ All of the above is recorded in the Layer 2 spec, section 12 "Amendments":
    One more full download (about 3.5 hours) fixes that for good. Only worth
    it before another parsing change. To do it: back up `data/`, then
    `forget_thin("best_of_sno", max_words=10**9)` and run the crawl.
-3. **Training-data prep cleanups** (not scraper fixes; both sources need them):
-   - strip "Story continues below advertisement": it is in 1,861 of 1,862
-     Best of SNO bodies but only in Torrey Pines' school pages;
-   - drop the 14 empty non-winner rows (crosswords, issue PDFs);
-   - hold out `uncertain.csv` (resolve the one `author-date` row by hand).
+3. **Training-data prep cleanups: done** (`best_of_sno/prep.py`,
+   `python -m best_of_sno.prep` → `data/training.csv`, 81 winners +
+   1,564 non-winners). It strips the ad marker, the leading "Name · "
+   photo credit on Carlmont long-form stories (13/81 winners vs 14/1,710
+   non-winners had it), and escaped HTML; drops the 146 rows under 20 words
+   (crosswords, trivia, sudoku, galleries, issue PDFs: not 14 as first
+   counted); never reads `uncertain.csv`. `layer2.csv` is left as crawled.
+   Still open: resolve the one `author-date` uncertain row by hand.
 4. Still deferred from before: add the owner's own publication to `SITES`;
    schedule the daily scraper (it has run once); clean the archive's noisy
    `source_site`; `_same_author` token containment; O(n²) CSV writer.
@@ -122,13 +125,14 @@ All of the above is recorded in the Layer 2 spec, section 12 "Amendments":
 ## Quick reference
 ```bash
 source .venv/bin/activate
-python -m pytest best_of_sno/tests -q          # 201 with PR #11, offline, ~1s
+python -m pytest best_of_sno/tests -q          # 214, offline, ~1s
 
 python -m best_of_sno.layer2                   # crawl (resumes; 4 sites)
 python -m best_of_sno.layer2 --sites scotscoop.com --limit 5
 python -m best_of_sno.layer2 --relabel         # re-judge uncertain.csv, offline
 python -m best_of_sno.layer2 --reparse         # rebuild rows from saved pages, offline
 python -m best_of_sno.layer2 --refetch-thin    # re-download rows under 200 words
+python -m best_of_sno.prep                     # layer2.csv -> training.csv, offline
 tail -f best_of_sno/logs/layer2.log
 ```
 
