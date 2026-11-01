@@ -105,3 +105,41 @@ def test_compare_reports_separation_and_claude_agreement(tmp_path):
     assert "vs claude" in report
     claude_lede = next(line for line in report.splitlines() if line.startswith("lede"))
     assert " 1.00 " in claude_lede      # Claude's AUC: winners always higher
+
+
+def _hand_setup(tmp_path):
+    rows = [_row(1, "winner", 800), _row(2, "non_winner", 800, school="B")]
+    rows[0]["body"] = "A tale with </script> inside"
+    _setup(tmp_path, rows)
+    (tmp_path / "data" / "layer3_trial" / "handscore_ids.txt").write_text("id1\nid2\n", encoding="utf-8")
+    return tmp_path
+
+
+def test_handscore_page_hides_labels_and_escapes_script_tags(tmp_path):
+    path = t.handscore_page(str(_hand_setup(tmp_path)))
+    html = open(path, encoding="utf-8").read()
+    assert "T1" in html and "T2" in html
+    assert "non_winner" not in html and '"winner"' not in html
+    assert "</script> inside" not in html          # would end the page's script early
+    assert "__STORIES__" not in html and "__DIMS__" not in html
+
+
+def test_import_owner_validates_and_compare_reports_agreement(tmp_path):
+    d = str(_hand_setup(tmp_path))
+    src = tmp_path / "handscores.jsonl"
+    bad = _scores(3)
+    bad["lede"]["score"] = 9
+    src.write_text("\n".join(json.dumps(x) for x in [
+        {"id": "id1", "reply": _scores(4)},
+        {"id": "id2", "reply": bad},
+        {"id": "id9", "reply": _scores(3)},
+    ]) + "\n", encoding="utf-8")
+    res = t.import_owner(d, str(src))
+    assert res["imported"] == 1 and res["missing"] == ["id2"] and len(res["problems"]) == 2
+
+    with open(t.scores_path(d, "gemma"), "w", encoding="utf-8") as f:
+        f.write(json.dumps({"id": "id1", "model": "gemma", "scores": _scores(5)}) + "\n")
+    report = t.compare(d)
+    assert "agreement with your hand scores" in report
+    row = next(line for line in report.splitlines() if line.startswith("gemma ") and "%" in line)
+    assert row.split()[1:] == ["1.00", "100%", "7.0"]

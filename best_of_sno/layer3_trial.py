@@ -4,6 +4,8 @@
     python -m best_of_sno.layer3_trial run gemma4:e4b
     python -m best_of_sno.layer3_trial run gemma4:12b
     python -m best_of_sno.layer3_trial import-claude  # check + load subagent scores
+    python -m best_of_sno.layer3_trial handscore-page # page for the owner's 5 stories
+    python -m best_of_sno.layer3_trial import-owner ~/Downloads/handscores.jsonl
     python -m best_of_sno.layer3_trial compare
 
 Everything is written to best_of_sno/data/layer3_trial/ (git-ignored: it
@@ -22,7 +24,8 @@ import os
 import random
 import statistics
 
-from .scorer import DIMENSION_KEYS, evidence_found, parse_scores, score_with_ollama
+from .scorer import (DIMENSION_KEYS, DIMENSIONS, STORY_TYPES, evidence_found,
+                     parse_scores, score_with_ollama)
 
 TRIAL_SIZE = 30          # winners; the same number of non-winners is matched
 HANDSCORE_SIZE = 5
@@ -154,6 +157,161 @@ def import_claude(data_dir: str) -> dict:
     return {"imported": len(recs), "missing": sorted(ids - set(recs)), "problems": problems}
 
 
+_PAGE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hand scoring</title>
+<style>
+:root { --bg:#fbfaf7; --fg:#1d1d1b; --muted:#6b6a65; --line:#dedbd2; --card:#fff; --accent:#2f5d8a; }
+@media (prefers-color-scheme: dark) { :root { --bg:#191918; --fg:#ecebe6; --muted:#a3a19a; --line:#3a3936; --card:#222220; --accent:#8fb6e0; } }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.6 Georgia, serif; }
+header, main { max-width: 760px; margin: 0 auto; padding: 16px; }
+header { font-family: system-ui, sans-serif; }
+nav { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0; }
+nav button, .btn { font:inherit; font-family:system-ui,sans-serif; padding:6px 12px; border:1px solid var(--line);
+  background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+nav button.on { border-color:var(--accent); color:var(--accent); font-weight:600; }
+nav button.done::after { content:" \\2713"; }
+.story { white-space: pre-wrap; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px; }
+.meta { color:var(--muted); font-family:system-ui,sans-serif; font-size:14px; }
+fieldset { border:1px solid var(--line); border-radius:8px; margin:16px 0; padding:8px 12px; background:var(--card); font-family:system-ui,sans-serif; font-size:14px; }
+legend { font-weight:600; padding:0 4px; }
+label.opt { display:flex; gap:8px; padding:4px 0; align-items:baseline; cursor:pointer; }
+textarea { width:100%; font:inherit; margin-top:4px; background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:4px; }
+.bar { position:sticky; bottom:0; background:var(--bg); border-top:1px solid var(--line); padding:12px 16px; text-align:center; font-family:system-ui,sans-serif; }
+</style></head><body>
+<header><h1>Hand scoring: 5 stories</h1>
+<p class="meta">Read each story and pick the anchor that fits best on each dimension.
+Judge the writing, not the length or topic. Winners and non-winners are mixed in;
+the page doesn't say which is which. Your picks are kept in this browser as you go.
+When all five are done, press <b>Download scores</b> and run
+<code>python -m best_of_sno.layer3_trial import-owner &lt;downloaded file&gt;</code>.</p>
+<nav id="nav"></nav></header>
+<main id="main"></main>
+<div class="bar"><span id="status"></span> <button class="btn" id="dl">Download scores</button></div>
+<script>
+const STORIES = __STORIES__;
+const DIMS = __DIMS__;
+const TYPES = __TYPES__;
+const KEY = "handscore-v1";
+let state = {};
+try { state = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) {}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} };
+let cur = 0;
+const complete = id => { const s = state[id] || {}; return s.story_type && DIMS.every(d => s[d.key]); };
+function render() {
+  const nav = document.getElementById("nav"); nav.innerHTML = "";
+  STORIES.forEach((s, i) => { const b = document.createElement("button");
+    b.textContent = "Story " + (i + 1); b.className = (i === cur ? "on " : "") + (complete(s.id) ? "done" : "");
+    b.onclick = () => { cur = i; render(); scrollTo(0, 0); }; nav.appendChild(b); });
+  const s = STORIES[cur], st = state[s.id] = state[s.id] || {};
+  const m = document.getElementById("main"); m.innerHTML = "";
+  const h = document.createElement("h2"); h.textContent = s.title; m.appendChild(h);
+  const meta = document.createElement("p"); meta.className = "meta"; meta.textContent = s.word_count + " words"; m.appendChild(meta);
+  const body = document.createElement("div"); body.className = "story"; body.textContent = s.body; m.appendChild(body);
+  DIMS.forEach(d => {
+    const fs = document.createElement("fieldset"); const lg = document.createElement("legend");
+    lg.textContent = d.label + " \\u2014 " + d.what; fs.appendChild(lg);
+    d.anchors.forEach((a, i) => { const l = document.createElement("label"); l.className = "opt";
+      const r = document.createElement("input"); r.type = "radio"; r.name = d.key; r.checked = st[d.key] === i + 1;
+      r.onchange = () => { st[d.key] = i + 1; save(); status(); };
+      l.append(r, document.createTextNode((i + 1) + ". " + a)); fs.appendChild(l); });
+    const t = document.createElement("textarea"); t.rows = 1; t.placeholder = "Optional: a quote or note backing your score";
+    t.value = st[d.key + "_note"] || ""; t.oninput = () => { st[d.key + "_note"] = t.value; save(); }; fs.appendChild(t);
+    m.appendChild(fs); });
+  const fs = document.createElement("fieldset"); const lg = document.createElement("legend"); lg.textContent = "Story type"; fs.appendChild(lg);
+  const sel = document.createElement("select"); sel.innerHTML = "<option value=''>choose\\u2026</option>" + TYPES.map(t => "<option>" + t + "</option>").join("");
+  sel.value = st.story_type || ""; sel.onchange = () => { st.story_type = sel.value; save(); status(); }; fs.appendChild(sel); m.appendChild(fs);
+  status();
+}
+function status() {
+  const n = STORIES.filter(s => complete(s.id)).length;
+  document.getElementById("status").textContent = n + " of " + STORIES.length + " stories fully scored";
+  document.querySelectorAll("#nav button").forEach((b, i) => b.classList.toggle("done", complete(STORIES[i].id)));
+}
+document.getElementById("dl").onclick = () => {
+  const lines = STORIES.filter(s => complete(s.id)).map(s => { const st = state[s.id], reply = { story_type: st.story_type };
+    DIMS.forEach(d => reply[d.key] = { score: st[d.key], evidence: st[d.key + "_note"] || "" });
+    return JSON.stringify({ id: s.id, reply }); });
+  if (lines.length < STORIES.length && !confirm("Only " + lines.length + " stories are complete. Download anyway?")) return;
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([lines.join("\\n") + "\\n"], { type: "application/json" }));
+  a.download = "handscores.jsonl"; a.click();
+};
+render();
+</script></body></html>
+"""
+
+
+def _js(value) -> str:
+    """JSON that is safe to drop inside a <script> tag."""
+    return json.dumps(value).replace("</", "<\\/")
+
+
+def handscore_page(data_dir: str) -> str:
+    """Write ``handscore.html``: the owner's 5 stories (no labels) with the
+    rubric anchors as choices. It stays in the git-ignored trial folder
+    because it holds story text."""
+    folder = trial_dir(data_dir)
+    stories = {s["id"]: s for s in _read_csv(os.path.join(folder, "stories.csv"))}
+    with open(os.path.join(folder, "handscore_ids.txt"), encoding="utf-8") as f:
+        ids = [line.strip() for line in f if line.strip()]
+    picked = [{k: stories[i][k] for k in ("id", "title", "word_count", "body")} for i in ids]
+    dims = [{"key": k, "label": label, "what": what, "anchors": anchors}
+            for k, label, what, anchors in DIMENSIONS]
+    html = (_PAGE.replace("__STORIES__", _js(picked)).replace("__DIMS__", _js(dims))
+            .replace("__TYPES__", _js(STORY_TYPES)))
+    path = os.path.join(folder, "handscore.html")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(html)
+    return path
+
+
+def import_owner(data_dir: str, src: str) -> dict:
+    """Check the page's download with the same parser as every scorer and
+    write ``owner_scores.jsonl``. Kept out of the ``scores_*`` files so the
+    owner is a yardstick in ``compare``, not a candidate."""
+    with open(os.path.join(trial_dir(data_dir), "handscore_ids.txt"), encoding="utf-8") as f:
+        ids = {line.strip() for line in f if line.strip()}
+    recs, problems = {}, []
+    with open(src, encoding="utf-8") as f:
+        for n, line in enumerate(f, start=1):
+            if not line.strip():
+                continue
+            try:
+                item = json.loads(line)
+                if item.get("id") not in ids:
+                    raise ValueError(f"not a hand-score story: {item.get('id')!r}")
+                recs[item["id"]] = {"id": item["id"], "model": "owner",
+                                    "scores": parse_scores(json.dumps(item["reply"]))}
+            except (ValueError, KeyError, TypeError) as e:
+                problems.append(f"line {n}: {e}")
+    with open(os.path.join(trial_dir(data_dir), "owner_scores.jsonl"), "w", encoding="utf-8") as f:
+        f.writelines(json.dumps(r) + "\n" for r in recs.values())
+    return {"imported": len(recs), "missing": sorted(ids - set(recs)), "problems": problems}
+
+
+def owner_agreement(owner: dict[str, dict], scorers: dict[str, dict[str, dict]]) -> list[str]:
+    """Per scorer: average gap from the owner's score and share within one
+    point, over the dimensions of the stories both scored. Five stories is
+    too few for a rank correlation, so this stays to plain gaps."""
+    lines = [f"=== agreement with your hand scores ({len(owner)} stories)",
+             f"{'scorer':13} {'avg gap':>7} {'+/-1':>5} {'total gap':>9}"]
+    for name, recs in scorers.items():
+        shared = [i for i in owner if "scores" in recs.get(i, {})]
+        if not shared:
+            continue
+        gaps = [abs(recs[i]["scores"][d]["score"] - owner[i]["scores"][d]["score"])
+                for i in shared for d in DIMENSION_KEYS]
+        tot = [abs(sum(recs[i]["scores"][d]["score"] - owner[i]["scores"][d]["score"] for d in DIMENSION_KEYS))
+               for i in shared]
+        lines.append(f"{name:13} {statistics.mean(gaps):7.2f} {sum(g <= 1 for g in gaps) / len(gaps):5.0%} "
+                     f"{statistics.mean(tot):9.1f}")
+    lines.append("avg gap: average points apart per dimension (lower is closer to you). "
+                 "total gap: average distance on the 7-35 total.")
+    return lines + [""]
+
+
 def auc(pos: list[float], neg: list[float]) -> float:
     """Chance a random winner outscores a random non-winner (ties count
     half). 0.5 = no separation, 1.0 = perfect."""
@@ -237,6 +395,9 @@ def compare(data_dir: str) -> str:
         if quotes_all:
             lines.append(f"evidence quotes found in the story: {quotes_ok}/{quotes_all} ({quotes_ok / quotes_all:.0%})")
         lines.append("")
+    owner = load_scores(os.path.join(trial_dir(data_dir), "owner_scores.jsonl"))
+    if owner:
+        lines += owner_agreement(owner, scorers)
     lines.append("AUC: chance a winner outscores a non-winner (0.5 = coin flip). "
                  "len rho: rank correlation with word count (want near 0). "
                  "vs claude: rank agreement with Claude; ±1: share within one point of Claude.")
@@ -251,10 +412,17 @@ def main(argv=None) -> None:
     r = sub.add_parser("run")
     r.add_argument("model")
     sub.add_parser("import-claude")
+    sub.add_parser("handscore-page")
+    o = sub.add_parser("import-owner")
+    o.add_argument("file")
     sub.add_parser("compare")
     a = p.parse_args(argv)
     if a.cmd == "select":
         print(select(a.data_dir))
+    elif a.cmd == "handscore-page":
+        print(handscore_page(a.data_dir))
+    elif a.cmd == "import-owner":
+        print(import_owner(a.data_dir, a.file))
     elif a.cmd == "run":
         print(run(a.data_dir, a.model))
     elif a.cmd == "import-claude":
