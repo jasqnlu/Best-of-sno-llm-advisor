@@ -141,12 +141,17 @@ def _standard_body(soup: BeautifulSoup) -> str:
     A stray closing tag in the story can end the body element early and
     push the remaining paragraphs out beside it or further up the page;
     ``_stray_story_tail`` reads them back. Photo galleries are dropped whole
-    (label, photographer and captions), as Best of SNO's copies drop them.
+    (label, photographer and captions), as is the featured photo some themes
+    put inside the body; Best of SNO's copies have neither.
     On a healthy page this yields the same text as ``backfill.parse_post``.
     """
     body_el = soup.select_one(".sno-story-body-content")
     for gallery in soup.select(".slideshowwrap"):
         (gallery.find_parent(class_="photowrap") or gallery).decompose()
+    for slideshow in soup.select(".inline-slideshow-area"):  # flexslider gallery
+        slideshow.decompose()
+    for featured in body_el.select(".sno-story-body-media"):
+        featured.decompose()
     parts = [body_el.decode_contents()] + _stray_story_tail(body_el)
     return scraper.strip_html(" ".join(parts))
 

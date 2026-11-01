@@ -268,3 +268,26 @@ def test_healthy_page_body_does_not_pick_up_page_chrome():
     r = _parse("scotscoop_post.html", "https://scotscoop.com/x/", "scotscoop.com")
     assert "Share on Facebook" not in r["body"]
     assert "View Story Comments" not in r["body"]
+
+
+def test_featured_photo_caption_is_not_story_text():
+    # Scot Scoop puts the featured photo (photographer + caption) inside the
+    # story body; Best of SNO shows it above the story, so its copies start
+    # with the first paragraph instead.
+    r = _parse("scotscoop_inline_gallery.html",
+               "https://scotscoop.com/carlmonts-security-cameras-can-recognize-faces-but-most-students-have-no-idea/",
+               "scotscoop.com")
+    assert "An Avigilon multisensor camera overlooks a covered walkway" not in r["body"]
+    assert r["body"].startswith("A camera is mounted in a white dome above a hallway")
+
+
+def test_torrey_pines_inline_slideshow_is_dropped_but_figure_captions_kept():
+    # Real Torrey Pines winner. Its flexslider gallery (captions plus
+    # "Navigate Left Navigate Right") is absent from Best of SNO's copy,
+    # while the plain figure captions are kept there.
+    r = _parse("torreypinesfalconer_inline_slideshow.html",
+               "https://torreypinesfalconer.com/13673/feature/your-face-your-canvas-makeup-as-art-self-expression/",
+               "torreypinesfalconer.com")
+    assert "Navigate Left" not in r["body"]
+    assert "Syd Roenfeldt (11) experiments with goth makeup" not in r["body"]
+    assert "Audrey Song (11) likes to express herself" in r["body"]
