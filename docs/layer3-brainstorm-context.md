@@ -132,10 +132,13 @@ didn't object]. The other six tables are still to write [open].
   the same scores.
 - **Length check:** scores must not just track word count.
 
-### Scorer trial [proposal, awaiting owner's yes]
+### Scorer trial [decided: run all three; owner left the call to Claude]
 Run the same **60 stories** through each candidate scorer with the same
 rubric, then pick the one that best separates winners and best matches the
-owner's 5 hand-scored stories:
+owner's 5 hand-scored stories. Why all three: it costs one extra model on
+the PC; Claude gives the quality bar; the two Gemma sizes show whether 12B
+judges writing noticeably better, which also informs which size to
+fine-tune for the advice model.
 - Claude via the API.
 - Gemma, untrained (as Google publishes it, instruction-tuned), small size.
 - Gemma 12B, untrained.
@@ -206,6 +209,14 @@ measured:
   system RAM. It should run, but slower; scoring ~800 feature stories may
   take many hours, so time a few stories first. Small Gemma fits on the GPU.
 - **Set temperature 0 for scoring** (Ollama default is 1).
+- **Install both Gemma sizes [owner asked; yes]:** `ollama pull gemma4:e4b`
+  and `ollama pull gemma4:12b` (tags checked on ollama.com 2026-11-01; the
+  library also lists `-it-qat` and `-it-q8_0` variants). After pulling,
+  `ollama show <tag>` and record the quantization of each. **Both trial
+  models should use the same kind of 4-bit quantization**, so a gap between
+  them is about size, not compression. Don't copy the Mac's
+  `gemma4:latest`: it is nvfp4, a format built for newer NVIDIA cards than
+  the 2060 Super.
 - Running the fine-tuned model: export the Colab adapter merged into the
   base model and converted to a format Ollama loads (GGUF), and quantize it
   the same way as the untrained baseline so before/after comparisons are
@@ -216,25 +227,32 @@ measured:
 1. Clone the repo and check out the right branch (PR #12's
    `feat/training-data-prep` until it merges, then `main`).
 2. **Data is gitignored and must never be committed** (story text). Copy
-   `best_of_sno/data/` from the Mac by hand: at least `training.csv` and
-   `archive.csv`. Use a USB drive or private local transfer, not a public
-   service.
+   the whole data folder from the Mac by hand (about 30 MB) with a USB
+   drive or private local transfer, not a public service. On the Mac it is
+   `/Users/jasonlu/Desktop/Best-of-sno-scraper/Best-of-sno-llm-advisor/best_of_sno/data/`;
+   put it at `best_of_sno/data/` inside the PC's clone. What's in it:
+   - `training.csv` (8.6 MB): cleaned winners + non-winners. **Layer 3 needs this.**
+   - `archive.csv` (12 MB): 1,862 Best of SNO winners. **Needed** (archive
+     feature winners, retrieval for advice).
+   - `layer2.csv` (8.7 MB): raw crawl; `training.csv` is rebuilt from it.
+   - `uncertain.csv`, `new.csv`, and the `*_state.json` files: small; copy
+     them so the scrapers can resume if ever run from the PC.
+   - `pages/`: empty for now; skip it.
 3. Python venv + `pip install -r best_of_sno/requirements.txt`; run the
    tests.
-4. Install Ollama; pull the Gemma sizes for the trial. (Fine-tuning
-   happens on Colab, not here.)
+4. Install Ollama; pull both Gemma sizes (section 8). Fine-tuning happens
+   on Colab, not here.
 
 ## 10. Open questions (ask in this order)
 
-1. **Scorer trial:** include both Gemma sizes alongside Claude? (Pending
-   owner's yes.)
-2. **API key / budget for Claude** scoring and grading. (Asked; the owner
-   moved to the Gemma discussion before answering.)
-3. **How staff use the tool:** each writer pastes a draft into a page, or
+1. **API key / budget for Claude** (the trial's Claude scorer, later the
+   grading of Gemma's advice). Asked; the owner moved to the Gemma
+   discussion before answering.
+2. **How staff use the tool:** each writer pastes a draft into a page, or
    drafts go through the owner? (Asked; not answered.) This decides whether
    the final tool must run without the owner's machine.
-4. Approve or change dimensions 5–7 and the "length is not a score" rule.
-5. The other six anchor tables.
+3. Approve or change dimensions 5–7 and the "length is not a score" rule.
+4. The other six anchor tables.
 
 ## 11. Owner preferences (from handoff, still in force)
 
