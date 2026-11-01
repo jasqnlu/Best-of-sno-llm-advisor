@@ -25,7 +25,7 @@ def test_page_path_is_per_host_and_readable(tmp_path):
     p = page_path(str(tmp_path), "scotscoop.com", URL1)
     assert p == str(tmp_path / "data" / "pages" / "scotscoop.com" / "1_news_story-1.html.gz")
     assert page_path(str(tmp_path), "harkeraquila.com", "https://harkeraquila.com/") \
-        .endswith("harkeraquila.com/index.html.gz")
+        .endswith(os.path.join("harkeraquila.com", "index.html.gz"))
 
 
 def test_crawl_saves_every_fetched_page_gzipped(tmp_path):

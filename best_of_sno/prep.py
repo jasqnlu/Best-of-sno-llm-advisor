@@ -23,7 +23,6 @@ import argparse
 import csv
 import os
 import re
-import sys
 from collections import Counter
 
 from .layer2 import LAYER2_COLUMNS, _rows_to_csv_text
@@ -54,7 +53,8 @@ def clean_body(body: str | None) -> str:
 
 def build_training_set(layer2_path: str, out_path: str) -> dict:
     """Write cleaned winner/non_winner rows to ``out_path``; return a report."""
-    csv.field_size_limit(sys.maxsize)
+    # sys.maxsize would overflow a C long on Windows; 2**31 - 1 fits everywhere.
+    csv.field_size_limit(2**31 - 1)
     kept: Counter = Counter()
     dropped_label = dropped_short = 0
     rows = []
