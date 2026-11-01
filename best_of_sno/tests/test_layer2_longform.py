@@ -291,3 +291,14 @@ def test_torrey_pines_inline_slideshow_is_dropped_but_figure_captions_kept():
     assert "Navigate Left" not in r["body"]
     assert "Syd Roenfeldt (11) experiments with goth makeup" not in r["body"]
     assert "Audrey Song (11) likes to express herself" in r["body"]
+
+
+def test_slideshow_inside_a_long_form_segment_is_dropped():
+    # Real Torrey Pines long-form story with a flexslider gallery inside one
+    # of its segments.
+    r = _parse("torreypinesfalconer_longform_slideshow.html",
+               "https://torreypinesfalconer.com/13373/showcase/community-hub-dot-cafe/",
+               "torreypinesfalconer.com")
+    assert "Navigate Left" not in r["body"]
+    assert "It was topped with house-made carrot cake syrup" not in r["body"]
+    assert r["word_count"] > 800

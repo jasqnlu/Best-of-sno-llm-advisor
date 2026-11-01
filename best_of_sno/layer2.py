@@ -74,7 +74,8 @@ def post_id(url: str, host: str) -> str:
 _SEGMENT_NOISE = (
     "script, style, noscript, iframe, .sno-story-media-caption, "
     ".sno-story-media-photo-credit, .photo-credit, .embed-credit, "
-    ".slideshow-title"  # a gallery widget's "Gallery • 21 Photos" label
+    ".slideshow-title, "  # a gallery widget's "Gallery • 21 Photos" label
+    ".inline-slideshow-area"  # flexslider gallery: captions and slide buttons
 )
 
 # An audio/video-led post: a player inside the story and almost no text.
