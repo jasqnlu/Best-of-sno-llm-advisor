@@ -110,6 +110,14 @@ def test_build_output_has_the_layer2_columns(tmp_path):
         assert next(csv.reader(f)) == LAYER2_COLUMNS
 
 
+def test_build_guards_a_body_that_starts_with_a_formula_after_cleaning(tmp_path):
+    src, out = tmp_path / "layer2.csv", tmp_path / "training.csv"
+    _write(src, [_row("w", "winner", "Jo Lee · =HYPERLINK(\"x\") " + LONG)])
+    build_training_set(str(src), str(out))
+    [row] = _read(out)
+    assert row["body"].startswith("'=HYPERLINK")
+
+
 def test_min_words_keeps_short_photo_essays():
     # Photo essays ("In Photos: ...") carry 20-80 words of intro and stay in.
     assert MIN_WORDS <= 20

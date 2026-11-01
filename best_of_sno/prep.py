@@ -26,7 +26,7 @@ import re
 import sys
 from collections import Counter
 
-from .layer2 import LAYER2_COLUMNS
+from .layer2 import LAYER2_COLUMNS, _rows_to_csv_text
 from .scraper import word_count
 
 # Photo essays ("In Photos: ...") carry 20-80 words of intro and stay in;
@@ -71,11 +71,11 @@ def build_training_set(layer2_path: str, out_path: str) -> dict:
             kept[row["label"]] += 1
             rows.append(row)
 
+    # The shared writer guards each cell against spreadsheet formulas, which
+    # matters here: stripping a credit can leave a body starting with "=".
     tmp = out_path + ".tmp"
     with open(tmp, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=LAYER2_COLUMNS, extrasaction="ignore")
-        writer.writeheader()
-        writer.writerows(rows)
+        f.write(_rows_to_csv_text(rows, LAYER2_COLUMNS))
     os.replace(tmp, out_path)
     return {"kept": dict(kept), "dropped_short": dropped_short, "dropped_label": dropped_label}
 
