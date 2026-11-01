@@ -193,17 +193,23 @@ Layer 4 shows actually separate winners.
 Ollama has `gemma4:latest` (8.1B parameters, the "effective 4B" small
 build, nvfp4, 9.5 GB, default temperature 1) and `qwen3:14b`.
 
-**PC** (owner's choice for the Gemma work, 2026-11-01): RTX 2060 Super,
-32 GB RAM. Notes to verify on the machine, not measured:
+**Who does what [owner, 2026-11-01]:**
+- **PC runs the models:** the Layer 3 scorer trial, scoring all feature
+  stories, and running the fine-tuned advice model afterwards.
+- **Google Colab does the fine-tuning** (QDoRA). The fine-tuned weights
+  come back to the PC to run.
+
+**PC:** RTX 2060 Super, 32 GB RAM. Notes to verify on the machine, not
+measured:
 - The 2060 Super has **8 GB of VRAM**. Gemma 12B at 4-bit is roughly 7–8 GB
   of weights plus working memory, so Ollama may split it between GPU and
-  system RAM. It should run, but slower. Small Gemma fits on the GPU.
-- **Fine-tuning 12B on 8 GB VRAM is unlikely to fit.** Small Gemma with
-  4-bit QLoRA/QDoRA may fit with a memory-saving library (for example
-  Unsloth) and short sequences; stories average ~1,300 words, so check
-  sequence length. Colab stays the fallback for 12B.
-- Turing GPUs (20-series) have no bf16; use fp16.
+  system RAM. It should run, but slower; scoring ~800 feature stories may
+  take many hours, so time a few stories first. Small Gemma fits on the GPU.
 - **Set temperature 0 for scoring** (Ollama default is 1).
+- Running the fine-tuned model: export the Colab adapter merged into the
+  base model and converted to a format Ollama loads (GGUF), and quantize it
+  the same way as the untrained baseline so before/after comparisons are
+  fair.
 
 ## 9. Setting up the PC
 
@@ -215,7 +221,8 @@ build, nvfp4, 9.5 GB, default temperature 1) and `qwen3:14b`.
    service.
 3. Python venv + `pip install -r best_of_sno/requirements.txt`; run the
    tests.
-4. Install Ollama; pull the Gemma sizes for the trial.
+4. Install Ollama; pull the Gemma sizes for the trial. (Fine-tuning
+   happens on Colab, not here.)
 
 ## 10. Open questions (ask in this order)
 
