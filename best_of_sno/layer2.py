@@ -100,6 +100,25 @@ def _longform_body(soup: BeautifulSoup) -> str:
     return scraper.strip_html(" ".join(parts))
 
 
+def _standard_body(soup: BeautifulSoup) -> str:
+    """Text of ``.sno-story-body-content``, repaired for two school-site quirks.
+
+    A stray closing tag in the story can end the body element early, which
+    leaves the remaining paragraphs beside it inside ``.sno-story-body``, so
+    those trailing siblings are read too (healthy pages have none with
+    text). Photo galleries are dropped whole (label, photographer and
+    captions), as Best of SNO's copies drop them. Otherwise this yields the
+    same text as ``backfill.parse_post``.
+    """
+    body_el = soup.select_one(".sno-story-body-content")
+    for gallery in body_el.parent.select(".slideshowwrap"):
+        (gallery.find_parent(class_="photowrap") or gallery).decompose()
+    html = body_el.decode_contents() + "".join(
+        " " + str(sibling) for sibling in body_el.find_next_siblings()
+    )
+    return scraper.strip_html(html)
+
+
 def is_media_only(html: bytes, word_count: int) -> bool:
     """True for a podcast or video post: an audio/video player inside the
     story and fewer than ``MEDIA_MAX_WORDS`` words of text. A written story
@@ -146,9 +165,11 @@ def parse_school_post(
         return None
     soup = BeautifulSoup(html, "html.parser")
 
-    if not record["body"]:
+    if record["body"]:
+        record["body"] = _standard_body(soup)
+    else:
         record["body"] = _longform_body(soup)
-        record["word_count"] = scraper.word_count(record["body"])
+    record["word_count"] = scraper.word_count(record["body"])
 
     if not record["published"]:
         # Scoped to the byline: other .time-wrapper elements on the page

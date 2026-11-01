@@ -218,3 +218,30 @@ def test_main_refetch_thin_forgets_then_crawls(tmp_path, monkeypatch):
                  "--refetch-thin", "--delay", "0"]) == 0
     assert calls == ["scotscoop.com"]
     assert {r["id"] for r in _rows(tmp_path / "data" / "layer2.csv")} == {"K1", "E1"}
+
+
+# --- standard-template body repairs ------------------------------------------
+
+def test_body_survives_a_stray_closing_tag_mid_article():
+    # Real Scot Scoop story (a Best of SNO winner, 909 words there). A stray
+    # closing tag ends .sno-story-body-content after 142 words; the other
+    # paragraphs sit beside it inside .sno-story-body.
+    r = _parse("scotscoop_stray_close_tag.html",
+               "https://scotscoop.com/a-baby-a-misdiagnosis-and-a-family-torn-apart/",
+               "scotscoop.com")
+    assert r["word_count"] > 850
+    assert r["body"].startswith("Sarah Goble’s son was only two-months-old")
+    assert "The judge didn’t ask a single question" in r["body"]
+    assert "For Goble, the personal consequences were profound" in r["body"]
+
+
+def test_inline_gallery_is_dropped_but_the_text_after_it_is_kept():
+    # Real Scot Scoop story with a 6-photo gallery between paragraphs. Best of
+    # SNO's copy drops the whole gallery: label, photographer and captions.
+    r = _parse("scotscoop_inline_gallery.html",
+               "https://scotscoop.com/carlmonts-security-cameras-can-recognize-faces-but-most-students-have-no-idea/",
+               "scotscoop.com")
+    assert "Gallery •" not in r["body"]
+    assert "A large Avigilon multisensor dome watches over" not in r["body"]
+    assert "Even students who said they broadly support cameras" in r["body"]
+    assert r["word_count"] > 2000
