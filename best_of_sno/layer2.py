@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import csv
 import difflib
+import gzip
 import html
 import io
 import logging
@@ -533,6 +534,53 @@ def _require_corpus_covers(data_dir: str, since: str) -> None:
         )
 
 
+PAGES_DIR = "pages"
+
+
+def page_path(data_dir: str, host: str, url: str) -> str:
+    """Where the crawl keeps ``url``'s raw page: ``data/pages/<host>/<path>.html.gz``,
+    the URL path with every run of other characters turned into ``_``."""
+    key = re.sub(r"[^A-Za-z0-9._-]+", "_", urlparse(url).path.strip("/")) or "index"
+    return os.path.join(data_dir, "data", PAGES_DIR, host, key + ".html.gz")
+
+
+def save_page(path: str, html_bytes: bytes) -> None:
+    """Write ``html_bytes`` gzipped, atomically (a crash never leaves half a page)."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with gzip.open(tmp, "wb") as f:
+        f.write(html_bytes)
+    os.replace(tmp, path)
+
+
+def _judge(html_bytes: bytes, url: str, scraped_at: str, *, host: str, since: str,
+           until: str, winners: list[dict]) -> tuple[str, dict | None]:
+    """Parse one fetched page and decide what becomes of it.
+
+    Returns ``(outcome, row)``: ``"dropped_out_of_window"`` or
+    ``"dropped_media"`` with no row, else the label (winner / non_winner /
+    uncertain) and the row to write.
+    """
+    record = parse_school_post(html_bytes, url, scraped_at, since=since, host=host)
+    if record is None or (record["published"] and record["published"] > until):
+        # Before since, or after until: its win status is either out of
+        # scope or not yet settled, so it must not become a negative.
+        return "dropped_out_of_window", None
+    if is_media_only(html_bytes, record["word_count"]):
+        # A podcast or video: almost no text to learn from or judge.
+        return "dropped_media", None
+    # On a school's own site the host IS the source, and the byline's
+    # trailing segment is a staff role, not the school.
+    record["source_site"] = host
+    record["school"] = SITES[host]
+    verdict = classify(record, winners)
+    row = {**record, "label": verdict.label, "matched_id": verdict.matched_id}
+    if verdict.label == "uncertain":
+        row.update(reason=verdict.reason, candidate_title=verdict.candidate_title,
+                   candidate_url=verdict.candidate_url)
+    return verdict.label, row
+
+
 def run_layer2(
     data_dir: str,
     *,
@@ -618,29 +666,14 @@ def run_layer2(
                     time.sleep(delay)
                 continue
 
-            record = parse_school_post(html_bytes, loc, now, since=since, host=host)
-            if record is None or (record["published"] and record["published"] > until):
-                # Before since, or after until: its win status is either out
-                # of scope or not yet settled, so it must not become a negative.
-                counts["dropped_out_of_window"] += 1
-            elif is_media_only(html_bytes, record["word_count"]):
-                # A podcast or video: almost no text to learn from or judge.
-                counts["dropped_media"] += 1
-            else:
-                # On a school's own site the host IS the source, and the
-                # byline's trailing segment is a staff role, not the school.
-                record["source_site"] = host
-                record["school"] = SITES[host]
-                verdict = classify(record, winners)
-                row = {**record, "label": verdict.label, "matched_id": verdict.matched_id}
-                if verdict.label == "uncertain":
-                    row.update(reason=verdict.reason,
-                               candidate_title=verdict.candidate_title,
-                               candidate_url=verdict.candidate_url)
-                    append_rows(uncertain_path, [row], UNCERTAIN_COLUMNS)
-                else:
-                    append_rows(layer2_path, [row], LAYER2_COLUMNS)
-                counts[verdict.label] += 1
+            save_page(page_path(data_dir, host, loc), html_bytes)
+            outcome, row = _judge(html_bytes, loc, now, host=host, since=since,
+                                  until=until, winners=winners)
+            if outcome == "uncertain":
+                append_rows(uncertain_path, [row], UNCERTAIN_COLUMNS)
+            elif row is not None:
+                append_rows(layer2_path, [row], LAYER2_COLUMNS)
+            counts[outcome] += 1
             done.add(pid)
             pending_since_save += 1
 
@@ -707,6 +740,53 @@ def relabel_uncertain(data_dir: str) -> dict:
     return counts
 
 
+def reparse_saved(data_dir: str, *, since: str = DEFAULT_SINCE,
+                  until: str = DEFAULT_UNTIL) -> dict:
+    """Rebuild every row in layer2.csv and uncertain.csv from its saved page
+    with the current parser and labeler, then run ``relabel_uncertain``.
+    Fetches nothing.
+
+    Each row keeps its original ``scraped_at``. A row whose page was never
+    saved (crawled before pages were kept) stays as it is. A row that now
+    parses as out of window or media-only is removed (it stays marked done).
+    Pages dropped at crawl time have no row, so they are not revisited.
+    """
+    backfill._require_iso_date(since, "--since")
+    backfill._require_iso_date(until, "--until")
+    data = os.path.join(data_dir, "data")
+    layer2_path = os.path.join(data, "layer2.csv")
+    uncertain_path = os.path.join(data, "uncertain.csv")
+    corpus = load_winner_corpus(data_dir)
+    counts = dict.fromkeys(
+        ("reparsed", "no_saved_page", "winner", "non_winner", "uncertain",
+         "dropped_out_of_window", "dropped_media"), 0)
+    out = {layer2_path: [], uncertain_path: []}
+    for source in (layer2_path, uncertain_path):
+        for row in scraper._read_rows(source):
+            host = row.get("source_site", "")
+            path = page_path(data_dir, host, row["url"])
+            if host not in SITES or not os.path.exists(path):
+                counts["no_saved_page"] += 1
+                out[source].append(row)
+                continue
+            with gzip.open(path) as f:
+                html_bytes = f.read()
+            outcome, new = _judge(html_bytes, row["url"], row.get("scraped_at", ""), host=host,
+                                  since=since, until=until, winners=corpus.get(SITES[host], []))
+            counts[outcome] += 1
+            if new is not None:
+                counts["reparsed"] += 1
+                out[uncertain_path if outcome == "uncertain" else layer2_path].append(new)
+    # layer2.csv first: a crash in between can only leave a row in both
+    # files, which the crawl's done-set and relabel both tolerate.
+    scraper._atomic_write_text(layer2_path, _rows_to_csv_text(out[layer2_path], LAYER2_COLUMNS))
+    scraper._atomic_write_text(uncertain_path,
+                               _rows_to_csv_text(out[uncertain_path], UNCERTAIN_COLUMNS))
+    counts["relabel"] = relabel_uncertain(data_dir)
+    LOG.info("reparse: %s", counts)
+    return counts
+
+
 def forget_thin(data_dir: str, sites: list[str] | None = None,
                 max_words: int = MEDIA_MAX_WORDS) -> int:
     """Remove rows under ``max_words`` words (for ``sites``, default all)
@@ -752,6 +832,8 @@ def main(argv: list[str] | None = None) -> int:
                         help=f"re-fetch rows under {MEDIA_MAX_WORDS} words with the current parser")
     parser.add_argument("--relabel", action="store_true",
                         help="re-judge uncertain.csv against the corpus offline; fetch nothing")
+    parser.add_argument("--reparse", action="store_true",
+                        help="rebuild rows from saved pages with the current parser; fetch nothing")
     args = parser.parse_args(argv)
 
     sites = None
@@ -773,6 +855,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     if args.relabel:
         LOG.info("result: %s", relabel_uncertain(args.data_dir))
+        return 0
+    if args.reparse:
+        try:
+            LOG.info("result: %s", reparse_saved(args.data_dir, since=args.since, until=args.until))
+        except ValueError as exc:
+            parser.error(str(exc))
         return 0
     try:
         if args.refetch_thin:
