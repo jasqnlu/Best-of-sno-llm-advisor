@@ -12,9 +12,11 @@ __pycache__/
 
 # Scraper runtime data (local-only; copyright: never commit story text)
 best_of_sno/data/*.csv
+best_of_sno/data/*.jsonl
 best_of_sno/data/*.tmp
 best_of_sno/data/state.json
 best_of_sno/data/backfill_state.json
 best_of_sno/data/layer2_state.json
 best_of_sno/data/pages/
 best_of_sno/logs/*.log
+best_of_sno/data/layer3_trial/
