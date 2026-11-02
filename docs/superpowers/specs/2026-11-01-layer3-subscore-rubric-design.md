@@ -93,6 +93,38 @@ archive sits between 60 and 300 words; the cut is 100). Archive bodies get
 the same `clean_body` as training rows. The 60 trial stories reuse their
 trial scores.
 
+### Results (run 2026-11-01, 733 stories, 0 errors)
+
+About 5.5 hours on the RTX 2060 Super, including ~43 minutes of cooling
+pauses (the run paused at 80°C GPU and resumed at 70°C; peak 84°C).
+AUC = chance a winner outscores a non-winner. "Training" compares the 60
+school-site winners with the 155 school-site non-winners; "all" adds the
+518 archive winners.
+
+| | Training winners avg | Archive winners avg | Non-winners avg | AUC training | AUC all | Rank corr. with length |
+|---|---|---|---|---|---|---|
+| lede | 3.62 | 3.48 | 2.85 | 0.68 | 0.65 | 0.29 |
+| sourcing | 4.32 | 4.08 | 3.66 | 0.70 | 0.63 | 0.49 |
+| quotes | 4.30 | 4.14 | 3.73 | 0.70 | 0.65 | 0.51 |
+| focus | 4.27 | 4.41 | 4.19 | 0.53 | 0.59 | 0.17 |
+| depth | 4.20 | 3.68 | 3.31 | 0.81 | 0.65 | 0.57 |
+| significance | 4.50 | 3.86 | 3.49 | 0.83 | 0.65 | 0.52 |
+| craft | 3.72 | 3.64 | 3.22 | 0.69 | 0.67 | 0.45 |
+| **total** | 28.92 | 27.29 | 24.45 | **0.81** | **0.71** | 0.55 |
+| word count alone | 1,678 | 1,231 | 1,110 | 0.77 | 0.62 | – |
+
+- The total separates winners better than word count alone (0.81 vs 0.77
+  on training; 0.71 vs 0.62 with archive winners), so the scores carry
+  information beyond length.
+- Significance and depth separate school-site winners best. Focus barely
+  separates them (0.53) and is the least length-driven: the first
+  candidate for rewording.
+- Archive winners score below the four schools' winners, mostly on depth
+  and significance, and are shorter. Layer 4 should check whether
+  that gap matters.
+- Story-type tags: feature 385, profile 249, news 95, other 4. Every story
+  was filed as a feature, so the tag mostly splits features from profiles.
+
 ## Open for Layer 4
 
 - `source` must not be a model input: every archive row is a winner.
