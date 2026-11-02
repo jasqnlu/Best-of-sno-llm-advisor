@@ -125,11 +125,47 @@ school-site winners with the 155 school-site non-winners; "all" adds the
 - Story-type tags: feature 385, profile 249, news 95, other 4. Every story
   was filed as a feature, so the tag mostly splits features from profiles.
 
-## Open for Layer 4
+## Layer 4: the chance bar (built 2026-11-01)
 
-- `source` must not be a model input: every archive row is a winner.
-- Non-winners are 155 of 733, so weight the classes and calibrate.
-- Focus may need rewording if it still doesn't separate winners there.
+`python -m best_of_sno.layer4 evaluate` / `fit` → `data/layer4_model.json`.
+
+- Logistic regression on the seven scores plus log word count, written in
+  plain Python (no numpy/scikit-learn). `source` is never an input: every
+  archive row is a winner.
+- Winners and non-winners weighted equally; L2 penalty 1.0 on
+  standardized inputs.
+- The percentage is shifted to the owner's schools' real feature win rate,
+  60 of 215 = 27.9%, so an unremarkable story reads as about 28%, not 50%.
+- Trained on all 733 stories (archive winners included).
+
+**Held-out results** (5-fold × 10):
+
+| Model | AUC within one school | AUC across the 4 schools |
+|---|---|---|
+| scores + length (chosen) | 0.64 | 0.80 |
+| scores only | 0.64 | 0.80 |
+| length only | 0.62 | 0.77 |
+| scores + length, trained on the 4 schools only | 0.61 | 0.84 |
+
+**The across-school number is misleading.** 54 of the 60 school-site
+feature winners are Carlmont, and "is it Carlmont" alone reaches 0.82.
+Only the within-school AUC (Carlmont, the one school with enough of both)
+shows whether the model judges writing, and there it is barely ahead of
+length. Probable cause: 12B scores bunch at 4–5. Even Claude reached only
+0.67 on length- and school-matched pairs in the trial.
+
+**Decision [owner, 2026-11-01]: show a band, not a percentage.**
+`chance_band`: Low under 20%, Medium 20–40%, High 40% and up. Held out
+on the owner's schools, these won 2% (64 stories), 31% (95) and 54% (56).
+The seven scores and the advice are the main output. The fine-tuned
+advice model is the planned route to sharper scoring.
+
+## Still open
+
+- Focus may need rewording: it separates winners worst and gets a
+  negative weight in Layer 4.
 - The brainstorm's consistency check (score about 30 stories twice and
   compare) hasn't been run. With temperature 0 and a fixed seed, repeats
   should match exactly.
+- More winners from schools other than Carlmont would make the
+  within-school check possible beyond one school.

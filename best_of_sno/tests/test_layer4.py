@@ -62,3 +62,8 @@ def test_within_school_auc_ignores_the_school_shortcut():
 def test_cross_validate_beats_chance_on_a_real_signal():
     res = L.cross_validate(_rows(), DIMENSION_KEYS, repeats=2)
     assert res["auc_school"] > 0.8 and res["auc_within"] > 0.8
+
+
+def test_chance_band_cutoffs():
+    assert [L.chance_band(p) for p in (0.0, 0.199, 0.2, 0.399, 0.4, 0.99)] == [
+        "Low", "Low", "Medium", "Medium", "High", "High"]

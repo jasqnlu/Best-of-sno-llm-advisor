@@ -116,6 +116,16 @@ def predict(model: dict, row: dict) -> float:
     return _sigmoid(z)
 
 
+# The model is only a little better than length inside one school (held-out
+# AUC 0.64 vs 0.62), so the chance bar shows a band, not a precise percent.
+# Held out on the owner's schools, these bands won 2% / 31% / 54% of the time.
+BANDS = ((0.20, "Low"), (0.40, "Medium"), (float("inf"), "High"))
+
+
+def chance_band(p: float) -> str:
+    return next(name for cut, name in BANDS if p < cut)
+
+
 def _folds(rows: list[dict], k: int, rng: random.Random) -> list[list[int]]:
     """Stratified by label and source, so every fold has school winners,
     archive winners and non-winners."""
@@ -161,6 +171,9 @@ def cross_validate(rows: list[dict], features: list[str], *, train_filter=None,
         "mean_pred_school": statistics.mean(sp),
         "actual_rate_school": statistics.mean(sy),
         "calibration": _bins(sp, sy),
+        "bands": [(name, sum(1 for p in sp if chance_band(p) == name),
+                   statistics.mean([y for p, y in zip(sp, sy) if chance_band(p) == name] or [float("nan")]))
+                  for _, name in BANDS],
     }
 
 
@@ -215,6 +228,9 @@ def evaluate(data_dir: str) -> str:
     lines += ["", "calibration, scores + length, school-site stories (held out):",
               f"{'predicted':10} {'stories':>7} {'avg pred':>8} {'won':>6}"]
     lines += [f"{b:10} {n:7} {p:8.0%} {a:6.0%}" for b, n, p, a in best["calibration"]]
+    lines += ["", "chance bar bands, school-site stories (held out):",
+              f"{'band':10} {'stories':>7} {'won':>6}"]
+    lines += [f"{b:10} {n:7} {a:6.0%}" for b, n, a in best["bands"]]
     m = fit(rows)
     lines += ["", "weights (per 1 standard deviation; bigger = more pull toward winning):"]
     lines += [f"  {f:13} {c:+.2f}" for f, c in sorted(m["coefs"].items(), key=lambda kv: -kv[1])]
