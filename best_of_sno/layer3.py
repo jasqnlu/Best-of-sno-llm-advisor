@@ -2,6 +2,7 @@
 
     python -m best_of_sno.layer3 score gemma4:12b   # resumable; hours on 12B
     python -m best_of_sno.layer3 export gemma4:12b  # -> data/layer3_scores.csv
+    python -m best_of_sno.layer3 consistency gemma4:12b  # re-score 30, compare
 
 The stories are the chance-bar scope the owner chose: every feature in
 training.csv (winners and non-winners) plus the archive's feature winners.
@@ -20,11 +21,15 @@ import argparse
 import csv
 import json
 import os
+import random
 
 from .layer3_trial import _is_feature, _read_csv, load_scores, scores_path
 from .prep import clean_body
 from .scorer import DIMENSION_KEYS, long_enough, score_with_ollama
 from .scraper import word_count
+
+CONSISTENCY_N = 30
+CONSISTENCY_SEED = 0
 
 # Archive features run 1,000+ words; the 53 under this are stubs of 35-55
 # words and nothing sits between 60 and 300.
@@ -110,14 +115,56 @@ def export(data_dir: str, model: str) -> dict:
     return {"rows": len(rows), "missing": missing, "path": path}
 
 
+def consistency_file(data_dir: str, model: str) -> str:
+    safe = model.replace(":", "_").replace("/", "_")
+    return data_path(data_dir, f"layer3_consistency_{safe}.jsonl")
+
+
+def consistency(data_dir: str, model: str, *, n: int = CONSISTENCY_N, seed: int = CONSISTENCY_SEED,
+                scorer=score_with_ollama, log=print) -> dict:
+    """Score ``n`` already-scored stories again and compare.
+
+    The setup is pinned (temperature 0, fixed seed), so every repeat should
+    match exactly. A difference means the scores carry noise that Layer 4
+    would learn from. Repeats go to their own file; the main scores file is
+    never changed."""
+    recs = load_scores(scores_file(data_dir, model))
+    pool = [s for s in feature_set(data_dir) if "scores" in recs.get(s["id"], {})]
+    picked = random.Random(seed).sample(pool, min(n, len(pool)))
+    out = {"compared": 0, "identical": 0, "evidence_identical": 0, "errors": 0, "differing": []}
+    with open(consistency_file(data_dir, model), "w", encoding="utf-8") as f:
+        for k, s in enumerate(picked, start=1):
+            rec = {"id": s["id"], "model": model, **scorer(model, s["title"], s["body"])}
+            f.write(json.dumps(rec) + "\n")
+            f.flush()
+            if "error" in rec:
+                out["errors"] += 1
+                log(f"[{k}/{len(picked)}] ERROR {rec['error']}")
+                continue
+            old, new = recs[s["id"]]["scores"], rec["scores"]
+            changed = [d for d in DIMENSION_KEYS if old[d]["score"] != new[d]["score"]]
+            if old["story_type"] != new["story_type"]:
+                changed.append("story_type")
+            out["compared"] += 1
+            if changed:
+                out["differing"].append({"id": s["id"], "dimensions": changed})
+            else:
+                out["identical"] += 1
+            if all(old[d]["evidence"] == new[d]["evidence"] for d in DIMENSION_KEYS):
+                out["evidence_identical"] += 1
+            log(f"[{k}/{len(picked)}] {rec.get('seconds')}s "
+                + ("same" if not changed else "CHANGED " + ", ".join(changed)))
+    return out
+
+
 def main(argv=None) -> None:
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--data-dir", default=os.path.dirname(os.path.abspath(__file__)))
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("score", "export"):
+    for name in ("score", "export", "consistency"):
         sub.add_parser(name).add_argument("model")
     a = p.parse_args(argv)
-    print((score if a.cmd == "score" else export)(a.data_dir, a.model))
+    print({"score": score, "export": export, "consistency": consistency}[a.cmd](a.data_dir, a.model))
 
 
 if __name__ == "__main__":
