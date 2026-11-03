@@ -160,12 +160,35 @@ on the owner's schools, these won 2% (64 stories), 31% (95) and 54% (56).
 The seven scores and the advice are the main output. The fine-tuned
 advice model is the planned route to sharper scoring.
 
+## Consistency check (run 2026-11-02 on the PC)
+
+`python -m best_of_sno.layer3 consistency gemma4:12b`: 30 stored stories
+(seed 0) scored again with the same setup (gemma4:12b `6114515d63c1`,
+Ollama 0.40.13, temperature 0, seed 0).
+
+| | Result |
+|---|---|
+| Stories with all scores and story type the same | 22 of 30 |
+| Single scores that changed | 8 of 210, every one by 1 point (6 up, 2 down) |
+| Story type changed | 2 (profile → feature, news → feature) |
+| Evidence quotes word-for-word the same | 9 of 30 |
+| Errors | 0 |
+
+Changes: sourcing 3→4; lede 4→5, focus 4→5, significance 3→4 (one
+story); depth 2→3; lede 2→3; significance 5→4; lede 4→3.
+
+**Reading:** Ollama is not fully repeatable on this machine even with
+temperature 0 and a fixed seed (likely GPU math and batching). The noise is
+small (about 4% of scores, never more than 1 point; 30 stories is too
+few to say the 6-up/2-down tilt is real), but on scores that bunch at 4–5 a 1-point wobble is a real part
+of the spread Layer 4 learns from. Averaging two runs per story would
+cut it.
+
 ## Still open
 
 - Focus may need rewording: it separates winners worst and gets a
   negative weight in Layer 4.
-- The brainstorm's consistency check (score about 30 stories twice and
-  compare) hasn't been run. With temperature 0 and a fixed seed, repeats
-  should match exactly.
+- Consider averaging two scoring runs per story before Layer 4 (see the
+  consistency check below).
 - More winners from schools other than Carlmont would make the
   within-school check possible beyond one school.
