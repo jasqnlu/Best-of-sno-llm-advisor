@@ -1,6 +1,7 @@
 """Layer 3: score every feature story with the chosen scorer.
 
     python -m best_of_sno.layer3 score gemma4:12b   # resumable; hours on 12B
+    python -m best_of_sno.layer3 score gemma4:12b --run 2   # optional second run
     python -m best_of_sno.layer3 export gemma4:12b  # -> data/layer3_scores.csv
     python -m best_of_sno.layer3 consistency gemma4:12b  # re-score 30, compare
 
@@ -13,6 +14,12 @@ site" stubs, which aren't story text. Archive bodies get the same
 
 Scores from the trial (same model, same pinned setup, same text) are
 reused rather than run again.
+
+Ollama is not fully repeatable even with temperature 0 and a fixed seed
+(the 2026-11-02 consistency check: 8 of 210 scores moved by 1 point), so a
+story can be scored more than once with ``--run N``. ``export`` averages
+every run a story has. Drafts scored for the chance bar should get the
+same number of runs as the training stories.
 """
 
 from __future__ import annotations
@@ -35,7 +42,8 @@ CONSISTENCY_SEED = 0
 # words and nothing sits between 60 and 300.
 MIN_ARCHIVE_WORDS = 100
 EXPORT_COLUMNS = (["id", "label", "source", "school", "word_count", "long_enough", "story_type"]
-                  + DIMENSION_KEYS + ["total"])
+                  + DIMENSION_KEYS + ["total", "runs"])
+MAX_RUNS = 9
 
 
 def data_path(data_dir: str, name: str) -> str:
@@ -61,16 +69,29 @@ def feature_set(data_dir: str) -> list[dict]:
     return out
 
 
-def scores_file(data_dir: str, model: str) -> str:
+def scores_file(data_dir: str, model: str, run: int = 1) -> str:
+    """Run 1 keeps the original file name; later runs get ``_runN``."""
     safe = model.replace(":", "_").replace("/", "_")
-    return data_path(data_dir, f"layer3_scores_{safe}.jsonl")
+    suffix = "" if run == 1 else f"_run{run}"
+    return data_path(data_dir, f"layer3_scores_{safe}{suffix}.jsonl")
 
 
-def score(data_dir: str, model: str, *, scorer=score_with_ollama, log=print) -> dict:
+def _num(x: float):
+    """Whole numbers stay ints, so single-run exports look as before."""
+    return int(x) if x == int(x) else round(x, 2)
+
+
+def score(data_dir: str, model: str, *, run: int = 1, scorer=score_with_ollama,
+          log=print) -> dict:
+    """Score every feature story. Run 1 reuses trial scores; later runs
+    score everything fresh, since the trial is itself a first run."""
+    if not 1 <= run <= MAX_RUNS:
+        raise ValueError(f"run must be 1-{MAX_RUNS}")
     stories = feature_set(data_dir)
-    path = scores_file(data_dir, model)
+    path = scores_file(data_dir, model, run)
     done = {i for i, r in load_scores(path).items() if "scores" in r}
-    trial = {i: r for i, r in load_scores(scores_path(data_dir, model)).items() if "scores" in r}
+    trial = ({i: r for i, r in load_scores(scores_path(data_dir, model)).items() if "scores" in r}
+             if run == 1 else {})
     counts = {"stories": len(stories), "scored": 0, "reused": 0, "errors": 0, "skipped": len(done)}
     with open(path, "a", encoding="utf-8") as f:
         for n, s in enumerate(stories, start=1):
@@ -81,7 +102,7 @@ def score(data_dir: str, model: str, *, scorer=score_with_ollama, log=print) -> 
             else:
                 rec = {"id": s["id"], "model": model, **scorer(model, s["title"], s["body"])}
                 kind = "errors" if "error" in rec else "scored"
-                log(f"[{n}/{len(stories)}] {model} {rec.get('seconds')}s "
+                log(f"[{n}/{len(stories)}] {model} run {run} {rec.get('seconds')}s "
                     + (f"ERROR {rec['error']}" if "error" in rec else "ok"))
             f.write(json.dumps(rec) + "\n")
             f.flush()
@@ -91,28 +112,36 @@ def score(data_dir: str, model: str, *, scorer=score_with_ollama, log=print) -> 
 
 def export(data_dir: str, model: str) -> dict:
     """One row per scored story for Layer 4. Word count is its own column,
-    so Layer 4 learns how much length matters on top of the scores."""
+    so Layer 4 learns how much length matters on top of the scores.
+
+    Each score is the average over every run the story has (``runs``);
+    story type comes from run 1. A story needs run 1 to be exported."""
     stories = feature_set(data_dir)
-    recs = load_scores(scores_file(data_dir, model))
+    runs = [load_scores(scores_file(data_dir, model, 1))]      # {} if run 1 is missing
+    runs += [load_scores(scores_file(data_dir, model, n)) for n in range(2, MAX_RUNS + 1)
+             if os.path.exists(scores_file(data_dir, model, n))]
     rows, missing = [], 0
+    by_runs: dict[int, int] = {}
     for s in stories:
-        r = recs.get(s["id"], {})
-        if "scores" not in r:
+        if "scores" not in runs[0].get(s["id"], {}):
             missing += 1
             continue
-        sc = r["scores"]
+        got = [r[s["id"]]["scores"] for r in runs if "scores" in r.get(s["id"], {})]
         row = {k: s[k] for k in ("id", "label", "source", "school", "word_count")}
         row["long_enough"] = int(long_enough(s["word_count"]))
-        row["story_type"] = sc["story_type"]
-        row.update({k: sc[k]["score"] for k in DIMENSION_KEYS})
-        row["total"] = sum(sc[k]["score"] for k in DIMENSION_KEYS)
+        row["story_type"] = got[0]["story_type"]
+        avg = {k: sum(g[k]["score"] for g in got) / len(got) for k in DIMENSION_KEYS}
+        row.update({k: _num(v) for k, v in avg.items()})
+        row["total"] = _num(sum(avg.values()))
+        row["runs"] = len(got)
+        by_runs[len(got)] = by_runs.get(len(got), 0) + 1
         rows.append(row)
     path = data_path(data_dir, "layer3_scores.csv")
     with open(path, "w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, fieldnames=EXPORT_COLUMNS)
         w.writeheader()
         w.writerows(rows)
-    return {"rows": len(rows), "missing": missing, "path": path}
+    return {"rows": len(rows), "missing": missing, "stories_by_runs": by_runs, "path": path}
 
 
 def consistency_file(data_dir: str, model: str) -> str:
@@ -161,10 +190,16 @@ def main(argv=None) -> None:
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--data-dir", default=os.path.dirname(os.path.abspath(__file__)))
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("score", "export", "consistency"):
-        sub.add_parser(name).add_argument("model")
+    parsers = {name: sub.add_parser(name) for name in ("score", "export", "consistency")}
+    for sp in parsers.values():
+        sp.add_argument("model")
+    parsers["score"].add_argument("--run", type=int, default=1,
+                                  help="which scoring run to fill (2+ are averaged on export)")
     a = p.parse_args(argv)
-    print({"score": score, "export": export, "consistency": consistency}[a.cmd](a.data_dir, a.model))
+    if a.cmd == "score":
+        print(score(a.data_dir, a.model, run=a.run))
+    else:
+        print({"export": export, "consistency": consistency}[a.cmd](a.data_dir, a.model))
 
 
 if __name__ == "__main__":

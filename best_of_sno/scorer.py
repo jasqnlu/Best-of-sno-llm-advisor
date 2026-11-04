@@ -43,12 +43,15 @@ DIMENSIONS = [
         "Most quotes reveal feeling, insight or the speaker's voice; little filler.",
         "At least one quote you'd remember that only that person could have said; every quote earns its place.",
     ]),
-    ("focus", "Focus", "stays on one angle; every section serves it", [
-        "No clear angle; a list of facts or events.",
-        "An angle exists, but the story wanders into unrelated sections.",
-        "Mostly on one angle, with one or two sections that drift.",
-        "Clear angle; nearly every section serves it.",
-        "One sharp angle; every section builds on it and nothing could be cut without loss.",
+    # Focus reworded 2026-11-03 (owner approved) after the focus-v2 trial: the
+    # first wording gave nearly every story a 4 or 5. It is kept in VARIANTS
+    # as "focus-v1".
+    ("focus", "Focus", "a central point stated early (a nut graf), and sections that move it forward instead of just adding facts", [
+        "Covers a topic, not a story: you couldn't state its point in one sentence.",
+        "A point can be guessed, but the story never states it; sections read as separate pieces on the same topic.",
+        "The point is stated, but late (after the first five paragraphs) or vaguely; several sections add facts without moving it forward.",
+        "The point is stated early and most sections add something new to it, but at least one section could be cut with little loss.",
+        "A sharp point stated early; every section moves it forward with new evidence, a turn or a complication, and nothing could be cut without loss.",
     ]),
     ("depth", "Reporting depth", "facts, data, documents, scenes beyond interviews", [
         "Only the writer's opinion, or a single interview.",
@@ -74,13 +77,37 @@ DIMENSIONS = [
 ]
 DIMENSION_KEYS = [d[0] for d in DIMENSIONS]
 
+# Other rubric wordings, for trying on the 60-story trial. A variant swaps one
+# dimension's "what" and anchors; the scores file name carries the variant so
+# runs never mix.
+VARIANTS = {
+    # The first Focus wording (2026-11-01 to 11-03). On the trial it gave 59
+    # of 60 stories a 4 or 5 and separated winners worse than chance (AUC
+    # 0.43; the current wording reached 0.58).
+    "focus-v1": {"focus": (
+        "stays on one angle; every section serves it", [
+            "No clear angle; a list of facts or events.",
+            "An angle exists, but the story wanders into unrelated sections.",
+            "Mostly on one angle, with one or two sections that drift.",
+            "Clear angle; nearly every section serves it.",
+            "One sharp angle; every section builds on it and nothing could be cut without loss.",
+        ])},
+}
+
+
+def dimensions(variant: str | None = None) -> list[tuple]:
+    """The rubric's dimensions, with ``variant``'s swaps applied."""
+    swaps = VARIANTS[variant] if variant else {}
+    return [(k, label, *swaps[k]) if k in swaps else (k, label, what, anchors)
+            for k, label, what, anchors in DIMENSIONS]
+
 # Pinned Ollama settings. num_ctx 8192 fits the longest training feature
 # (~6k tokens) and keeps gemma4:12b fully on the 8 GB RTX 2060 Super.
 OLLAMA_OPTIONS = {"temperature": 0, "seed": 0, "num_ctx": 8192}
 OLLAMA_URL = "http://localhost:11434/api/chat"
 
 
-def rubric_text() -> str:
+def rubric_text(variant: str | None = None) -> str:
     """The instructions every scorer gets, word for word."""
     lines = [
         "You are grading a student journalism story for a high school newsroom.",
@@ -92,7 +119,7 @@ def rubric_text() -> str:
         "Then tag the story type as one of: " + ", ".join(STORY_TYPES) + ".",
         "",
     ]
-    for key, label, what, anchors in DIMENSIONS:
+    for key, label, what, anchors in dimensions(variant):
         lines.append(f"## {label} ({key}): {what}")
         lines.extend(f"{i}. {text}" for i, text in enumerate(anchors, start=1))
         lines.append("")
@@ -103,8 +130,8 @@ def rubric_text() -> str:
     return "\n".join(lines)
 
 
-def build_prompt(title: str, body: str) -> str:
-    return f"{rubric_text()}\n\nTITLE: {title}\n\nSTORY:\n{body}"
+def build_prompt(title: str, body: str, variant: str | None = None) -> str:
+    return f"{rubric_text(variant)}\n\nTITLE: {title}\n\nSTORY:\n{body}"
 
 
 def response_schema() -> dict:
@@ -166,7 +193,8 @@ def evidence_found(evidence: str, body: str) -> bool:
     return bool(ev) and ev in _norm(body)
 
 
-def score_with_ollama(model: str, title: str, body: str, *, post=requests.post) -> dict:
+def score_with_ollama(model: str, title: str, body: str, *, variant: str | None = None,
+                      post=requests.post) -> dict:
     """Score one story with the pinned Ollama setup.
 
     Returns ``{"scores": ..., "prompt_tokens", "seconds"}`` or
@@ -175,7 +203,7 @@ def score_with_ollama(model: str, title: str, body: str, *, post=requests.post) 
     payload = {
         "model": model, "stream": False, "think": False,
         "format": response_schema(), "options": OLLAMA_OPTIONS,
-        "messages": [{"role": "user", "content": build_prompt(title, body)}],
+        "messages": [{"role": "user", "content": build_prompt(title, body, variant)}],
     }
     start = time.time()
     resp = post(OLLAMA_URL, json=payload, timeout=1800)

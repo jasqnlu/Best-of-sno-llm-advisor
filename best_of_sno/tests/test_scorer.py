@@ -5,7 +5,7 @@ import json
 import pytest
 
 from best_of_sno.scorer import (
-    DIMENSION_KEYS, OLLAMA_OPTIONS, build_prompt, evidence_found, long_enough,
+    DIMENSION_KEYS, OLLAMA_OPTIONS, VARIANTS, build_prompt, evidence_found, long_enough,
     parse_scores, response_schema, rubric_text, score_with_ollama,
 )
 
@@ -106,3 +106,12 @@ def test_ollama_call_records_a_bad_reply_as_an_error():
     post = lambda url, json, timeout: _Resp({"prompt_eval_count": 10, "message": {"content": "nope"}})
     out = score_with_ollama("m", "T", "B", post=post)
     assert out["error"].startswith("not JSON") and out["raw"] == "nope"
+
+
+def test_variant_swaps_only_its_dimension():
+    base, v2 = rubric_text().splitlines(), rubric_text("focus-v1").splitlines()
+    changed = [line for line in v2 if line not in base]
+    assert len(base) == len(v2) and len(changed) == 6      # heading + 5 anchors
+    assert all(line.startswith(("## Focus", "1.", "2.", "3.", "4.", "5.")) for line in changed)
+    assert build_prompt("T", "B", "focus-v1").startswith(rubric_text("focus-v1"))
+    assert set(VARIANTS) == {"focus-v1"}

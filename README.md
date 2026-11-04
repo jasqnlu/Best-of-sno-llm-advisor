@@ -15,11 +15,12 @@ schools that weren't picked.
 
 > [!NOTE]
 > **Status:** Layers 1–2 (data) and Layer 3 (the scorer) are built. Gemma 12B has
-> scored all 733 in-depth feature stories. Layer 4 (the chance bar) is merged, and
+> scored all 733 in-depth feature stories twice with the reworded Focus, and the two
+> runs are averaged. Layer 4 (the chance bar) is merged and refitted, and
 > the advice model comes next. See [Roadmap](#roadmap).
 
 ![Python 3.14](https://img.shields.io/badge/python-3.14-3776ab)
-![Tests: 243 passing, offline](https://img.shields.io/badge/tests-243%20passing%2C%20offline-2ea44f)
+![Tests: 262 passing, offline](https://img.shields.io/badge/tests-262%20passing%2C%20offline-2ea44f)
 ![Data: local only](https://img.shields.io/badge/story%20text-never%20committed-lightgrey)
 
 ---
@@ -313,7 +314,7 @@ data how much each quality matters for winning.
 | 1 | **Lede** | A specific detail or scene you'd remember that leads straight into why the story matters. |
 | 2 | **Sourcing** | People with a direct stake; a range of viewpoints; named over anonymous. |
 | 3 | **Quotes** | Reveal feeling or insight the writer couldn't paraphrase, not logistics. |
-| 4 | **Focus** | Stays on one angle; every section serves it. |
+| 4 | **Focus** | A sharp point stated early; every section moves it forward, and nothing could be cut without loss. |
 | 5 | **Reporting depth** | Facts, data, documents and scenes beyond interviews. |
 | 6 | **Significance** | Clear reason to care; stakes beyond the school. |
 | 7 | **Craft** | Clear sentences, flow between sections, a real ending. |
@@ -334,7 +335,7 @@ flowchart LR
     s --> g12["Gemma 12B<br/>untrained"]
     c & g4 & g12 --> pick{"tracks Claude?<br/>quotes real?<br/>separates winners?"}
     pick --> chosen["✅ gemma4:12b"]
-    chosen --> all["scored all 733 features<br/>~5.5 h on an RTX 2060 Super, 0 errors"]
+    chosen --> all["scored all 733 features, twice<br/>~5 h per run on an RTX 2060 Super, 0 errors"]
 ```
 
 | | Claude | Gemma 12B | Gemma E4B |
@@ -352,12 +353,16 @@ the schema is logged as an error, never as a score.
 
 ### What the scores show
 
-![Bar chart of AUC per score. School winners vs non-winners: total 0.81, significance 0.83, depth 0.81, sourcing 0.70, quotes 0.70, craft 0.69, lede 0.68, focus 0.53; word count alone 0.77. With 518 archive winners added, all scores fall to 0.59–0.71.](docs/images/layer3-auc.svg)
+![Bar chart of AUC per score, two runs averaged. School winners vs non-winners: total 0.82, significance 0.81, depth 0.81, focus 0.72, sourcing 0.71, quotes 0.71, craft 0.70, lede 0.70; word count alone 0.77. With 518 archive winners added, all scores fall to 0.60–0.71.](docs/images/layer3-auc.svg)
 
-- **The total beats word count alone** (0.81 vs 0.77 among school stories; 0.71 vs
+- **The total beats word count alone** (0.82 vs 0.77 among school stories; 0.71 vs
   0.62 with archive winners), so the grades carry information beyond length.
-- **Significance and depth** pick out school winners best. **Focus** barely does
-  (0.53) and is the first candidate for rewording.
+- **Significance and depth** pick out school winners best. **Focus**, reworded on
+  2026-11-03 to ask for a point stated early and sections that move it forward, went
+  from the weakest score (0.53) to mid-pack (0.72), and its scores now spread over
+  2–5 instead of bunching at 4–5.
+- Each story is scored twice and the two runs averaged: 519 of 733 stories came back
+  identical, and 345 of the 347 changed scores moved by 1 point.
 - Archive winners score lower than the four schools' winners, mostly on depth and
   significance, and are shorter.
 
@@ -365,9 +370,10 @@ the schema is logged as an error, never as a score.
 
 `layer4.py` fits a class-balanced logistic regression on the seven grades plus word
 count, in plain Python. `source` is never an input, because every archive row is a
-winner. Within one school the model is only a little ahead of length alone
-(held-out AUC 0.64 vs 0.62). So the bar is shown as **Low / Medium / High** rather
-than a precise percentage.
+winner. Within one school the model is no better than length alone (held-out AUC
+0.59 vs 0.62; only 94 Carlmont stories, so this number moves ±0.1 by chance). So the
+bar is shown as **Low / Medium / High** rather than a precise percentage. Held out on
+the four schools, Low stories won 5%, Medium 27% and High 53%.
 
 ### Advice
 
@@ -389,7 +395,7 @@ cd Best-of-sno-llm-advisor
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r best_of_sno/requirements.txt pytest
 
-python -m pytest best_of_sno/tests -q    # 254 tests, fully offline, ~3 s
+python -m pytest best_of_sno/tests -q    # 262 tests, fully offline, ~3 s
 ```
 
 Dependencies are deliberately small: `requests`, `feedparser`, `beautifulsoup4`,
@@ -410,11 +416,13 @@ python -m best_of_sno.scraper
 python -m best_of_sno.layer2
 tail -f best_of_sno/logs/layer2.log
 
-# 3. Clean training set
+# 3. Clean training set (and the winners' source_site column)
 python -m best_of_sno.prep
+python -m best_of_sno.sources                         # also writes school_sites.csv
 
 # 4. Score every in-depth feature (hours; needs Ollama), then export
 python -m best_of_sno.layer3 score gemma4:12b
+python -m best_of_sno.layer3 score gemma4:12b --run 2  # second run; export averages the two
 python -m best_of_sno.layer3 export gemma4:12b
 python -m best_of_sno.layer3 consistency gemma4:12b   # re-score 30; repeats should match
 
@@ -442,11 +450,12 @@ pick up where it stopped.
 | `python -m best_of_sno.layer2 --reparse` | Rebuild rows from saved raw pages with the current parser, offline |
 | `python -m best_of_sno.layer2 --refetch-thin` | Re-download rows under 200 words |
 | `python -m best_of_sno.prep` | `--data-dir` |
-| `python -m best_of_sno.layer3 score MODEL` | Score every in-depth feature with the pinned scorer (resumable) |
-| `python -m best_of_sno.layer3 export MODEL` | Write `layer3_scores.csv` |
+| `python -m best_of_sno.sources` | Clean the winners' `source_site` from school names; write `school_sites.csv` · `--dry-run` |
+| `python -m best_of_sno.layer3 score MODEL` | Score every in-depth feature with the pinned scorer (resumable) · `--run N` fills a further run |
+| `python -m best_of_sno.layer3 export MODEL` | Write `layer3_scores.csv`, averaging every run a story has |
 | `python -m best_of_sno.layer3 consistency MODEL` | Re-score 30 scored stories (fixed sample) and report any that changed; the main scores file is untouched |
 | `python -m best_of_sno.layer4 evaluate` · `fit` | Cross-validated report (incl. within-school AUC) · save the fitted model |
-| `python -m best_of_sno.layer3_trial select` · `run MODEL` · `compare` | The 60-story scorer trial |
+| `python -m best_of_sno.layer3_trial select` · `run MODEL` · `compare` | The 60-story scorer trial · `run MODEL --variant focus-v2` tries a rubric rewording |
 | `python -m best_of_sno.layer3_trial handscore-page` · `import-owner FILE` | Optional hand-scoring page and import |
 
 `--reparse` exists because parser fixes used to mean a 3.5-hour re-download. Raw
@@ -467,7 +476,8 @@ or republished.
 | `layer2.csv` | 1,792 | Labeled school-site stories (`winner` / `non_winner`) |
 | `uncertain.csv` | 45 | Stories the labeler wouldn't call, with the candidate winner beside each |
 | `training.csv` | 1,646 | Cleaned training set (81 winners, 1,565 non-winners) |
-| `layer3_scores.csv` | 733 | Seven grades, total, word count and story type per feature story (no story text) |
+| `school_sites.csv` | 296 | Each winning school's site and winner count, for picking schools to crawl (no story text) |
+| `layer3_scores.csv` | 733 | Seven grades, total, word count, story type and number of runs per feature story (no story text) |
 | `layer3_trial/` | – | Scorer-trial picks and each scorer's replies |
 | `pages/` | – | Gzipped raw pages for `--reparse` |
 | `*state.json` | – | Resume checkpoints |
@@ -488,13 +498,15 @@ best_of_sno/
 ├── backfill.py        Layer 1b · historical sitemap backfill
 ├── layer2.py          Layer 2  · school-site crawl, parser, labeler, --relabel/--reparse
 ├── prep.py            training.csv builder (source-tell removal)
+├── sources.py         winners' source_site cleanup + school_sites.csv
 ├── scorer.py          Layer 3  · the rubric and the pinned Ollama scorer
 ├── layer3.py          Layer 3  · score all features, export layer3_scores.csv
-├── layer3_trial.py    Layer 3  · 60-story three-way scorer trial
+├── layer3_trial.py    Layer 3  · 60-story three-way scorer trial, rubric variants
+├── layer4.py          Layer 4  · the chance bar (logistic regression)
 ├── requirements.txt
 ├── data/              (gitignored) CSVs, scores, state, raw pages
 ├── logs/              (gitignored) one log per job
-└── tests/             24 test files, 243 tests, offline
+└── tests/             26 test files, 262 tests, offline
     └── fixtures/      saved real pages, sitemaps and feeds from each site
 docs/
 ├── images/            README charts + the script that draws them
@@ -560,20 +572,20 @@ test and a fix:
 | Training-data prep | ✅ built · `training.csv` ready |
 | Layer 3 · sub-score rubric + scorer | ✅ built · Gemma 12B scored 733 features |
 | Layer 4 · chance bar | ✅ built (PR #14): logistic regression, Low / Medium / High |
-| Advice model | ⬜ planned: QDoRA-fine-tuned Gemma |
+| Advice model | ⬜ designed, not built: QDoRA-fine-tuned Gemma ([design proposal](docs/superpowers/specs/2026-11-03-advice-model-design.md)) |
 
 Also on the list:
-- reword the Focus dimension: it still gets a negative Layer 4 weight (−0.18) and
-  almost every story scores 4 on it, so new wording is being tried on the 60-story
-  trial set before any full re-score;
-- average two scoring runs per story at the next full re-score: the consistency check
-  found 22 of 30 repeats identical, with every change exactly 1 point
-  ([details](docs/superpowers/specs/2026-11-01-layer3-subscore-rubric-design.md#consistency-check-run-2026-11-02-on-the-pc));
-- clean the archive's noisy `source_site` column before using it to pick more
-  schools.
+- find out why Layer 4 gains little from the scores within one school: the
+  regression learns mostly from archive winners (518 of 578), so its weights may
+  suit "archive vs school" better than "winner vs non-winner at one school"
+  ([details](docs/superpowers/specs/2026-11-01-layer3-subscore-rubric-design.md#re-score-with-focus-v2-two-runs-averaged-run-2026-11-04-on-the-pc));
+- pick more schools to crawl from `school_sites.csv`.
 
-Done: the editor's own publication (theburlingameb.org) is one of the four crawled
-sites; the last `author-date` uncertain row was settled by hand.
+Done: all 733 features re-scored with the reworded Focus, two runs each, averaged,
+and Layer 4 refitted (2026-11-04); the editor's own publication (theburlingameb.org) is one of the four crawled
+sites; the last `author-date` uncertain row was settled by hand; the winners'
+`source_site` was cleaned (`python -m best_of_sno.sources`: blanks 1,153 → 648,
+Flourish chart embeds no longer count as a school).
 
 ---
 

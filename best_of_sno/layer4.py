@@ -41,7 +41,7 @@ def load_rows(data_dir: str) -> list[dict]:
         r["y"] = int(r["label"] == "winner")
         r["log_words"] = math.log(max(int(r["word_count"]), 1))
         for k in DIMENSION_KEYS:
-            r[k] = int(r[k])
+            r[k] = float(r[k])        # averaged over runs, so may be 4.5
     return rows
 
 

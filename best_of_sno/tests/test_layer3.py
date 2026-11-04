@@ -72,7 +72,7 @@ def test_score_reuses_trial_scores_resumes_and_exports(tmp_path):
     assert calls == ["T2", "A2"]
 
     out = layer3.export(d, "m")
-    assert out == {"rows": 3, "missing": 0, "path": out["path"]}
+    assert out == {"rows": 3, "missing": 0, "stories_by_runs": {1: 3}, "path": out["path"]}
     rows = list(csv.DictReader(open(out["path"], encoding="utf-8")))
     assert [(r["id"], r["total"], r["long_enough"]) for r in rows] == [
         ("t1", "28", "1"), ("t2", "14", "0"), ("a2", "14", "1")]
@@ -123,3 +123,31 @@ def test_consistency_counts_errors_separately(tmp_path):
     out = layer3.consistency(d, "m", n=5, scorer=lambda *a: {"error": "boom"},
                              log=lambda *_: None)
     assert out["compared"] == 0 and out["errors"] == 1
+
+
+def test_second_run_scores_fresh_and_export_averages_runs(tmp_path):
+    d = _setup(tmp_path)
+    with open(scores_path(d, "m"), "w", encoding="utf-8") as f:   # trial = run 1 only
+        f.write(json.dumps({"id": "t1", "model": "m", "scores": _scores(4)}) + "\n")
+    layer3.score(d, "m", scorer=lambda *a: {"scores": _scores(2)}, log=lambda _: None)
+    calls = []
+
+    def fake(model, title, body):
+        calls.append(title)
+        return {"scores": _scores(3), "seconds": 1}
+
+    res = layer3.score(d, "m", run=2, scorer=fake, log=lambda _: None)
+    assert res["reused"] == 0 and calls == ["T1", "T2", "A2"]
+    assert layer3.scores_file(d, "m", 2).endswith("layer3_scores_m_run2.jsonl")
+
+    out = layer3.export(d, "m")
+    assert out["stories_by_runs"] == {2: 3}
+    rows = {r["id"]: r for r in csv.DictReader(open(out["path"], encoding="utf-8"))}
+    assert rows["t1"]["lede"] == "3.5" and rows["t1"]["total"] == "24.5"
+    assert rows["t2"]["lede"] == "2.5" and rows["t2"]["runs"] == "2"
+
+
+def test_export_needs_run_one(tmp_path):
+    d = _setup(tmp_path)
+    layer3.score(d, "m", run=2, scorer=lambda *a: {"scores": _scores(3)}, log=lambda _: None)
+    assert layer3.export(d, "m")["missing"] == 3
