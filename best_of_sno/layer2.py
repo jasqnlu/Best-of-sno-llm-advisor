@@ -40,6 +40,15 @@ SITES = {
     "harkeraquila.com": "The Harker School",
 }
 
+# Labels settled by a person, applied by ``relabel_uncertain`` (and so by
+# ``--reparse``) before any rule. Keep a reason for each.
+HAND_LABELS = {
+    # 28-word satire teaser; matched only on author + date to an unrelated
+    # opinion winner ("AI misogyny, dangers of generative gender bias").
+    # Settled by the owner 2026-11-03.
+    "https://torreypinesfalconer.com/?p=14993": "non_winner",
+}
+
 # Each winner lives in exactly one of these (run_backfill skips ids already
 # in new/old), so the answer key is their union — never archive.csv alone.
 CORPUS_FILES = ("archive.csv", "new.csv", "old.csv")
@@ -720,7 +729,9 @@ def relabel_uncertain(data_dir: str) -> dict:
     moved, kept = [], []
     for row in rows:
         school = SITES.get(row.get("source_site", ""), row.get("school", ""))
-        verdict = classify(row, corpus.get(school, []), claimed)
+        hand = HAND_LABELS.get(row["id"])
+        verdict = (Verdict(hand, "", "", "", "") if hand
+                   else classify(row, corpus.get(school, []), claimed))
         counts[verdict.label] += 1
         if verdict.label == "winner":
             claimed.add(verdict.matched_id)

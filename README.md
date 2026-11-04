@@ -15,8 +15,8 @@ schools that weren't picked.
 
 > [!NOTE]
 > **Status:** Layers 1–2 (data) and Layer 3 (the scorer) are built. Gemma 12B has
-> scored all 733 in-depth feature stories. Layer 4 (the chance bar) is in review as
-> PR #14, and the advice model comes after that. See [Roadmap](#roadmap).
+> scored all 733 in-depth feature stories. Layer 4 (the chance bar) is merged, and
+> the advice model comes next. See [Roadmap](#roadmap).
 
 ![Python 3.14](https://img.shields.io/badge/python-3.14-3776ab)
 ![Tests: 243 passing, offline](https://img.shields.io/badge/tests-243%20passing%2C%20offline-2ea44f)
@@ -63,7 +63,7 @@ flowchart TD
         label -->|winner / non_winner| l2[("layer2.csv")]
         label -->|uncertain| unc[("uncertain.csv<br/>held out for a human")]
         l2 --> prep["prep.py<br/>strip source tells, drop rows under 20 words"]
-        prep --> train[("training.csv<br/>81 winners · 1,564 non-winners")]
+        prep --> train[("training.csv<br/>81 winners · 1,565 non-winners")]
     end
 
     subgraph L3["Layer 3 · sub-scores"]
@@ -72,7 +72,7 @@ flowchart TD
         rubric --> scores[("layer3_scores.csv<br/>733 feature stories")]
     end
 
-    subgraph L4["Layer 4 · chance bar (PR #14)"]
+    subgraph L4["Layer 4 · chance bar"]
         scores --> lr["logistic regression<br/>7 scores + word count"]
         lr --> bar["chance bar<br/>Low / Medium / High"]
     end
@@ -83,7 +83,7 @@ flowchart TD
     advice --> out(["score + specific fixes"])
 
     classDef todo stroke-dasharray: 5 5
-    class lr,bar,advice todo
+    class advice todo
 ```
 
 Dashed boxes aren't on `main` yet.
@@ -105,7 +105,7 @@ only. Re-run it after a new crawl to refresh them.
 
 ### Winners vs. non-winners, by school
 
-![Bar chart: Carlmont 61 winners and 520 non-winners (10.5% won); Harker 5 and 524 (0.9%); Torrey Pines 6 and 371 (1.6%); Burlingame 9 and 149 (5.7%).](docs/images/schools.svg)
+![Bar chart: Carlmont 61 winners and 520 non-winners (10.5% won); Harker 5 and 524 (0.9%); Torrey Pines 6 and 372 (1.6%); Burlingame 9 and 149 (5.7%).](docs/images/schools.svg)
 
 Winners are rare: about **1 in 20** stories overall, and most come from one school.
 Layer 4 will need class weighting and probability calibration so the rare class
@@ -115,7 +115,7 @@ isn't drowned out.
 
 ![Histogram: winners have a median of 1,331 words and spread out to 3,000+; non-winners cluster at 500–1,000 words with a median of 702.](docs/images/word-counts.svg)
 
-| | Winners (81) | Non-winners (1,564) |
+| | Winners (81) | Non-winners (1,565) |
 |---|---|---|
 | Words, 10th percentile | 810 | 283 |
 | Words, median | 1,331 | 702 |
@@ -249,7 +249,9 @@ it's the same story. If 20% or fewer do, it's a different one. Stories with fewe
 than 50 phrases are too short to judge.
 
 This check cut the uncertain pile from **277 rows to 46**. Of those, 45 are undated
-pages (crosswords, issue PDFs, a homepage), and one needs a human look.
+pages (crosswords, issue PDFs, a homepage). The last one, a 28-word satire teaser
+matched only on author and date, was labeled non-winner by hand (`HAND_LABELS` in
+`layer2.py`, which `--relabel` and `--reparse` apply before any rule).
 
 ### The leakage rule
 
@@ -282,11 +284,11 @@ guess the label without reading the story.
 
 ```mermaid
 flowchart LR
-    crawl["crawled<br/>1,791 labeled<br/>+ 46 uncertain<br/>+ 150 podcasts/videos"] --> held["uncertain held out<br/>(never trained on)"]
+    crawl["crawled<br/>1,792 labeled<br/>+ 45 uncertain<br/>+ 150 podcasts/videos"] --> held["uncertain held out<br/>(never trained on)"]
     crawl --> media["podcasts/videos dropped"]
-    crawl --> l2["layer2.csv<br/>81 winners · 1,710 non"]
+    crawl --> l2["layer2.csv<br/>81 winners · 1,711 non"]
     l2 --> short["146 rows under 20 words dropped"]
-    l2 --> tr["training.csv<br/>81 winners · 1,564 non"]
+    l2 --> tr["training.csv<br/>81 winners · 1,565 non"]
 ```
 
 `training.csv` is also written through the formula-injection-guarded CSV writer.
@@ -359,9 +361,9 @@ the schema is logged as an error, never as a score.
 - Archive winners score lower than the four schools' winners, mostly on depth and
   significance, and are shorter.
 
-### The chance bar (Layer 4, in review)
+### The chance bar (Layer 4)
 
-PR #14 fits a class-balanced logistic regression on the seven grades plus word
+`layer4.py` fits a class-balanced logistic regression on the seven grades plus word
 count, in plain Python. `source` is never an input, because every archive row is a
 winner. Within one school the model is only a little ahead of length alone
 (held-out AUC 0.64 vs 0.62). So the bar is shown as **Low / Medium / High** rather
@@ -387,7 +389,7 @@ cd Best-of-sno-llm-advisor
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r best_of_sno/requirements.txt pytest
 
-python -m pytest best_of_sno/tests -q    # 243 tests, fully offline, ~3 s
+python -m pytest best_of_sno/tests -q    # 254 tests, fully offline, ~3 s
 ```
 
 Dependencies are deliberately small: `requests`, `feedparser`, `beautifulsoup4`,
@@ -414,8 +416,13 @@ python -m best_of_sno.prep
 # 4. Score every in-depth feature (hours; needs Ollama), then export
 python -m best_of_sno.layer3 score gemma4:12b
 python -m best_of_sno.layer3 export gemma4:12b
+python -m best_of_sno.layer3 consistency gemma4:12b   # re-score 30; repeats should match
 
-# 5. Refresh the README charts
+# 5. Fit and check the chance bar (seconds, offline)
+python -m best_of_sno.layer4 evaluate
+python -m best_of_sno.layer4 fit
+
+# 6. Refresh the README charts
 python docs/images/make_charts.py
 ```
 
@@ -437,6 +444,8 @@ pick up where it stopped.
 | `python -m best_of_sno.prep` | `--data-dir` |
 | `python -m best_of_sno.layer3 score MODEL` | Score every in-depth feature with the pinned scorer (resumable) |
 | `python -m best_of_sno.layer3 export MODEL` | Write `layer3_scores.csv` |
+| `python -m best_of_sno.layer3 consistency MODEL` | Re-score 30 scored stories (fixed sample) and report any that changed; the main scores file is untouched |
+| `python -m best_of_sno.layer4 evaluate` · `fit` | Cross-validated report (incl. within-school AUC) · save the fitted model |
 | `python -m best_of_sno.layer3_trial select` · `run MODEL` · `compare` | The 60-story scorer trial |
 | `python -m best_of_sno.layer3_trial handscore-page` · `import-owner FILE` | Optional hand-scoring page and import |
 
@@ -455,9 +464,9 @@ or republished.
 |---|---|---|
 | `archive.csv` | 1,862 | Best of SNO winners from the backfill |
 | `new.csv` / `old.csv` | ~10 / – | Winners from the daily feed (latest run / earlier runs) |
-| `layer2.csv` | 1,791 | Labeled school-site stories (`winner` / `non_winner`) |
-| `uncertain.csv` | 46 | Stories the labeler wouldn't call, with the candidate winner beside each |
-| `training.csv` | 1,645 | Cleaned training set (81 winners, 1,564 non-winners) |
+| `layer2.csv` | 1,792 | Labeled school-site stories (`winner` / `non_winner`) |
+| `uncertain.csv` | 45 | Stories the labeler wouldn't call, with the candidate winner beside each |
+| `training.csv` | 1,646 | Cleaned training set (81 winners, 1,565 non-winners) |
 | `layer3_scores.csv` | 733 | Seven grades, total, word count and story type per feature story (no story text) |
 | `layer3_trial/` | – | Scorer-trial picks and each scorer's replies |
 | `pages/` | – | Gzipped raw pages for `--reparse` |
@@ -545,22 +554,26 @@ test and a fix:
 
 | Stage | Status |
 |---|---|
-| Layer 1a · daily scraper | ✅ built · ⏳ not scheduled yet |
+| Layer 1a · daily scraper | ✅ built · run by hand (or re-run the backfill, which catches up) |
 | Layer 1b · historical backfill | ✅ built · corpus covers 2025-12-01 → 2026-10-30 |
 | Layer 2 · crawl + labeler | ✅ built, crawled, cleaned |
 | Training-data prep | ✅ built · `training.csv` ready |
 | Layer 3 · sub-score rubric + scorer | ✅ built · Gemma 12B scored 733 features |
-| Layer 4 · chance bar | 🔍 in review (PR #14): logistic regression, Low / Medium / High |
+| Layer 4 · chance bar | ✅ built (PR #14): logistic regression, Low / Medium / High |
 | Advice model | ⬜ planned: QDoRA-fine-tuned Gemma |
 
 Also on the list:
-- reword the Focus dimension if it still doesn't separate winners in Layer 4;
-- run the consistency check (score about 30 stories twice; with temperature 0 and a
-  fixed seed the repeats should match exactly);
-- add the editor's own publication as a crawled site;
+- reword the Focus dimension: it still gets a negative Layer 4 weight (−0.18) and
+  almost every story scores 4 on it, so new wording is being tried on the 60-story
+  trial set before any full re-score;
+- average two scoring runs per story at the next full re-score: the consistency check
+  found 22 of 30 repeats identical, with every change exactly 1 point
+  ([details](docs/superpowers/specs/2026-11-01-layer3-subscore-rubric-design.md#consistency-check-run-2026-11-02-on-the-pc));
 - clean the archive's noisy `source_site` column before using it to pick more
-  schools;
-- resolve the one remaining `author-date` uncertain row by hand.
+  schools.
+
+Done: the editor's own publication (theburlingameb.org) is one of the four crawled
+sites; the last `author-date` uncertain row was settled by hand.
 
 ---
 

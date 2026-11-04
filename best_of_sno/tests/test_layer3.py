@@ -76,3 +76,50 @@ def test_score_reuses_trial_scores_resumes_and_exports(tmp_path):
     rows = list(csv.DictReader(open(out["path"], encoding="utf-8")))
     assert [(r["id"], r["total"], r["long_enough"]) for r in rows] == [
         ("t1", "28", "1"), ("t2", "14", "0"), ("a2", "14", "1")]
+
+
+def _scored(d, ids, v=3):
+    with open(layer3.scores_file(d, "m"), "w", encoding="utf-8") as f:
+        for i in ids:
+            f.write(json.dumps({"id": i, "model": "m", "scores": _scores(v)}) + "\n")
+
+
+def test_consistency_reports_exact_repeats(tmp_path):
+    d = _setup(tmp_path)
+    _scored(d, ["t1", "t2", "a2"])
+    calls = []
+
+    def fake(model, title, body):
+        calls.append(title)
+        return {"scores": _scores(3), "seconds": 0}
+
+    out = layer3.consistency(d, "m", n=2, scorer=fake, log=lambda *_: None)
+    assert len(calls) == 2
+    assert out["compared"] == 2 and out["identical"] == 2 and out["differing"] == []
+    with open(layer3.consistency_file(d, "m"), encoding="utf-8") as f:
+        assert len(f.read().splitlines()) == 2
+
+
+def test_consistency_flags_changed_scores_and_never_touches_main_file(tmp_path):
+    d = _setup(tmp_path)
+    _scored(d, ["t1", "t2", "a2"])
+    before = open(layer3.scores_file(d, "m"), encoding="utf-8").read()
+
+    def fake(model, title, body):
+        s = _scores(3)
+        if title == "T2":
+            s["lede"]["score"] = 4
+        return {"scores": s, "seconds": 0}
+
+    out = layer3.consistency(d, "m", n=10, scorer=fake, log=lambda *_: None)
+    assert out["compared"] == 3 and out["identical"] == 2
+    assert out["differing"] == [{"id": "t2", "dimensions": ["lede"]}]
+    assert open(layer3.scores_file(d, "m"), encoding="utf-8").read() == before
+
+
+def test_consistency_counts_errors_separately(tmp_path):
+    d = _setup(tmp_path)
+    _scored(d, ["t1"])
+    out = layer3.consistency(d, "m", n=5, scorer=lambda *a: {"error": "boom"},
+                             log=lambda *_: None)
+    assert out["compared"] == 0 and out["errors"] == 1
