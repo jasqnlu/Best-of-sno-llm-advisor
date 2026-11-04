@@ -109,9 +109,9 @@ def test_ollama_call_records_a_bad_reply_as_an_error():
 
 
 def test_variant_swaps_only_its_dimension():
-    base, v2 = rubric_text().splitlines(), rubric_text("focus-v2").splitlines()
+    base, v2 = rubric_text().splitlines(), rubric_text("focus-v1").splitlines()
     changed = [line for line in v2 if line not in base]
     assert len(base) == len(v2) and len(changed) == 6      # heading + 5 anchors
     assert all(line.startswith(("## Focus", "1.", "2.", "3.", "4.", "5.")) for line in changed)
-    assert build_prompt("T", "B", "focus-v2").startswith(rubric_text("focus-v2"))
-    assert set(VARIANTS) == {"focus-v2"}
+    assert build_prompt("T", "B", "focus-v1").startswith(rubric_text("focus-v1"))
+    assert set(VARIANTS) == {"focus-v1"}

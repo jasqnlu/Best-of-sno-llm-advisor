@@ -3,7 +3,7 @@
     python -m best_of_sno.layer3_trial select      # pick the 60 stories
     python -m best_of_sno.layer3_trial run gemma4:e4b
     python -m best_of_sno.layer3_trial run gemma4:12b
-    python -m best_of_sno.layer3_trial run gemma4:12b --variant focus-v2
+    python -m best_of_sno.layer3_trial run gemma4:12b --variant focus-v1
     python -m best_of_sno.layer3_trial import-claude  # check + load subagent scores
     python -m best_of_sno.layer3_trial handscore-page # page for the owner's 5 stories
     python -m best_of_sno.layer3_trial import-owner ~/Downloads/handscores.jsonl
