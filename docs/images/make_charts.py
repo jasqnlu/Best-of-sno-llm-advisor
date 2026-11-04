@@ -12,7 +12,6 @@ needs no extra dependency. Each SVG carries its own light/dark colors.
 import collections
 import csv
 import statistics
-import sys
 from html import escape
 from pathlib import Path
 
@@ -20,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "best_of_sno" / "data"
 OUT = Path(__file__).resolve().parent
 
-csv.field_size_limit(sys.maxsize)
+csv.field_size_limit(2**31 - 1)  # sys.maxsize overflows on Windows
 
 SCHOOLS = [
     ("scotscoop.com", "Carlmont"),

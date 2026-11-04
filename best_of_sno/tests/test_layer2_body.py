@@ -273,3 +273,16 @@ def test_relabel_rules_out_winners_already_in_layer2(tmp_path):
     labeled = {r["id"]: r for r in _read(tmp_path / "data" / "layer2.csv")}
     assert labeled["https://theburlingameb.org/gallery/"]["label"] == "non_winner"
     assert res == {"winner": 1, "non_winner": 2, "uncertain": 1}
+
+
+def test_relabel_applies_hand_labels_before_the_rules(tmp_path, monkeypatch):
+    # "climate" would be ruled out by text anyway; "gallery" stays uncertain
+    # by rule, so a hand label is the only thing that can settle it.
+    monkeypatch.setattr("best_of_sno.layer2.HAND_LABELS",
+                        {"https://theburlingameb.org/gallery/": "non_winner"})
+    _seed(tmp_path)
+    res = relabel_uncertain(str(tmp_path))
+    assert res == {"winner": 1, "non_winner": 2, "uncertain": 1}
+    labeled = {r["id"]: r for r in _read(tmp_path / "data" / "layer2.csv")}
+    assert labeled["https://theburlingameb.org/gallery/"]["label"] == "non_winner"
+    assert labeled["https://theburlingameb.org/gallery/"]["matched_id"] == ""

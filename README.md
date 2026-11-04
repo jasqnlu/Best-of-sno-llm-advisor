@@ -63,7 +63,7 @@ flowchart TD
         label -->|winner / non_winner| l2[("layer2.csv")]
         label -->|uncertain| unc[("uncertain.csv<br/>held out for a human")]
         l2 --> prep["prep.py<br/>strip source tells, drop rows under 20 words"]
-        prep --> train[("training.csv<br/>81 winners · 1,564 non-winners")]
+        prep --> train[("training.csv<br/>81 winners · 1,565 non-winners")]
     end
 
     subgraph L3["Layer 3 · sub-scores"]
@@ -105,7 +105,7 @@ only. Re-run it after a new crawl to refresh them.
 
 ### Winners vs. non-winners, by school
 
-![Bar chart: Carlmont 61 winners and 520 non-winners (10.5% won); Harker 5 and 524 (0.9%); Torrey Pines 6 and 371 (1.6%); Burlingame 9 and 149 (5.7%).](docs/images/schools.svg)
+![Bar chart: Carlmont 61 winners and 520 non-winners (10.5% won); Harker 5 and 524 (0.9%); Torrey Pines 6 and 372 (1.6%); Burlingame 9 and 149 (5.7%).](docs/images/schools.svg)
 
 Winners are rare: about **1 in 20** stories overall, and most come from one school.
 Layer 4 will need class weighting and probability calibration so the rare class
@@ -115,7 +115,7 @@ isn't drowned out.
 
 ![Histogram: winners have a median of 1,331 words and spread out to 3,000+; non-winners cluster at 500–1,000 words with a median of 702.](docs/images/word-counts.svg)
 
-| | Winners (81) | Non-winners (1,564) |
+| | Winners (81) | Non-winners (1,565) |
 |---|---|---|
 | Words, 10th percentile | 810 | 283 |
 | Words, median | 1,331 | 702 |
@@ -249,7 +249,9 @@ it's the same story. If 20% or fewer do, it's a different one. Stories with fewe
 than 50 phrases are too short to judge.
 
 This check cut the uncertain pile from **277 rows to 46**. Of those, 45 are undated
-pages (crosswords, issue PDFs, a homepage), and one needs a human look.
+pages (crosswords, issue PDFs, a homepage). The last one, a 28-word satire teaser
+matched only on author and date, was labeled non-winner by hand (`HAND_LABELS` in
+`layer2.py`, which `--relabel` and `--reparse` apply before any rule).
 
 ### The leakage rule
 
@@ -282,11 +284,11 @@ guess the label without reading the story.
 
 ```mermaid
 flowchart LR
-    crawl["crawled<br/>1,791 labeled<br/>+ 46 uncertain<br/>+ 150 podcasts/videos"] --> held["uncertain held out<br/>(never trained on)"]
+    crawl["crawled<br/>1,792 labeled<br/>+ 45 uncertain<br/>+ 150 podcasts/videos"] --> held["uncertain held out<br/>(never trained on)"]
     crawl --> media["podcasts/videos dropped"]
-    crawl --> l2["layer2.csv<br/>81 winners · 1,710 non"]
+    crawl --> l2["layer2.csv<br/>81 winners · 1,711 non"]
     l2 --> short["146 rows under 20 words dropped"]
-    l2 --> tr["training.csv<br/>81 winners · 1,564 non"]
+    l2 --> tr["training.csv<br/>81 winners · 1,565 non"]
 ```
 
 `training.csv` is also written through the formula-injection-guarded CSV writer.
@@ -387,7 +389,7 @@ cd Best-of-sno-llm-advisor
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r best_of_sno/requirements.txt pytest
 
-python -m pytest best_of_sno/tests -q    # 253 tests, fully offline, ~3 s
+python -m pytest best_of_sno/tests -q    # 254 tests, fully offline, ~3 s
 ```
 
 Dependencies are deliberately small: `requests`, `feedparser`, `beautifulsoup4`,
@@ -462,9 +464,9 @@ or republished.
 |---|---|---|
 | `archive.csv` | 1,862 | Best of SNO winners from the backfill |
 | `new.csv` / `old.csv` | ~10 / – | Winners from the daily feed (latest run / earlier runs) |
-| `layer2.csv` | 1,791 | Labeled school-site stories (`winner` / `non_winner`) |
-| `uncertain.csv` | 46 | Stories the labeler wouldn't call, with the candidate winner beside each |
-| `training.csv` | 1,645 | Cleaned training set (81 winners, 1,564 non-winners) |
+| `layer2.csv` | 1,792 | Labeled school-site stories (`winner` / `non_winner`) |
+| `uncertain.csv` | 45 | Stories the labeler wouldn't call, with the candidate winner beside each |
+| `training.csv` | 1,646 | Cleaned training set (81 winners, 1,565 non-winners) |
 | `layer3_scores.csv` | 733 | Seven grades, total, word count and story type per feature story (no story text) |
 | `layer3_trial/` | – | Scorer-trial picks and each scorer's replies |
 | `pages/` | – | Gzipped raw pages for `--reparse` |
@@ -552,7 +554,7 @@ test and a fix:
 
 | Stage | Status |
 |---|---|
-| Layer 1a · daily scraper | ✅ built · ⏳ not scheduled yet |
+| Layer 1a · daily scraper | ✅ built · run by hand (or re-run the backfill, which catches up) |
 | Layer 1b · historical backfill | ✅ built · corpus covers 2025-12-01 → 2026-10-30 |
 | Layer 2 · crawl + labeler | ✅ built, crawled, cleaned |
 | Training-data prep | ✅ built · `training.csv` ready |
@@ -561,14 +563,17 @@ test and a fix:
 | Advice model | ⬜ planned: QDoRA-fine-tuned Gemma |
 
 Also on the list:
-- reword the Focus dimension if it still doesn't separate winners in Layer 4;
-- run the consistency check on the machine that holds the scores
-  (`layer3 consistency gemma4:12b`, about 15 minutes); with temperature 0 and a fixed
-  seed every repeat should match exactly;
-- add the editor's own publication as a crawled site;
+- reword the Focus dimension: it still gets a negative Layer 4 weight (−0.18) and
+  almost every story scores 4 on it, so new wording is being tried on the 60-story
+  trial set before any full re-score;
+- average two scoring runs per story at the next full re-score: the consistency check
+  found 22 of 30 repeats identical, with every change exactly 1 point
+  ([details](docs/superpowers/specs/2026-11-01-layer3-subscore-rubric-design.md#consistency-check-run-2026-11-02-on-the-pc));
 - clean the archive's noisy `source_site` column before using it to pick more
-  schools;
-- resolve the one remaining `author-date` uncertain row by hand.
+  schools.
+
+Done: the editor's own publication (theburlingameb.org) is one of the four crawled
+sites; the last `author-date` uncertain row was settled by hand.
 
 ---
 
