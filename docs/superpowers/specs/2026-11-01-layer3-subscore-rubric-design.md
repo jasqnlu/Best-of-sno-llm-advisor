@@ -216,11 +216,80 @@ export averages them. The trial's v2 scores used the identical prompt, so
 they serve as run 1 for those 60 stories. The v1 scores are kept beside
 the data as `*.focus-v1.*` files.
 
+## Re-score with focus-v2, two runs averaged (run 2026-11-04 on the PC)
+
+`layer3 score gemma4:12b`, then `--run 2`, then `export`: all 733 features
+with the pinned focus-v2 wording (gemma4:12b, Ollama 0.40.14 after an
+auto-update mid-run, same pinned setup). Run 1 reused the 60 trial scores
+(identical prompt). About 5 hours per run, 0 errors. GPU mostly 64–70°C, with
+short spikes to 80–85°C at the start of some stories (brief thermal throttling,
+never sustained). The v1 table above is kept for comparison; the v1 export is
+`data/layer3_scores.focus-v1.csv`.
+
+**Run 1 vs run 2:** 519 of 733 stories identical on all seven scores; 347 of
+5,131 single scores changed (6.8%), 345 by 1 point and 2 by 2 points, spread
+evenly across dimensions (45–59 each). This matches the consistency check
+(22 of 30 identical).
+
+**Results (two runs averaged):**
+
+| | Training winners avg | Archive winners avg | Non-winners avg | AUC training | AUC all | Rank corr. with length |
+|---|---|---|---|---|---|---|
+| lede | 3.59 | 3.39 | 2.78 | 0.70 | 0.66 | 0.29 |
+| sourcing | 4.29 | 3.98 | 3.66 | 0.71 | 0.60 | 0.48 |
+| quotes | 4.17 | 4.02 | 3.60 | 0.71 | 0.65 | 0.50 |
+| focus | 3.73 | 3.60 | 3.20 | **0.72** | **0.67** | 0.35 |
+| depth | 4.10 | 3.55 | 3.24 | 0.81 | 0.63 | 0.55 |
+| significance | 4.33 | 3.76 | 3.42 | 0.81 | 0.64 | 0.50 |
+| craft | 3.57 | 3.51 | 3.09 | 0.70 | 0.68 | 0.47 |
+| **total** | 27.78 | 25.81 | 22.99 | **0.82** | **0.71** | 0.56 |
+| word count alone | 1,678 | 1,231 | 1,110 | 0.77 | 0.62 | – |
+
+- Focus AUC 0.53 → 0.72 (training) and 0.59 → 0.67 (all), confirming the
+  trial. Its averaged scores now spread: below 3 25, 3–3.5 337, 4–4.5 359,
+  5 12 (v1: 446 fours and 273 fives). It now tracks length more (0.17 → 0.35)
+  but still less than the other scores.
+- The other six AUCs moved by at most 0.03; the total by +0.01.
+- Within Carlmont only (54 winners, 40 non-winners), raw AUCs: total
+  0.62 → 0.63, focus 0.48 → 0.58, word count 0.63. A bootstrap puts the
+  total's 90% range at about 0.53–0.73, so within-school numbers move ±0.1
+  by chance.
+
+**Layer 4 refit** (`evaluate`, then `fit`; 5-fold × 10 held out):
+
+| Model | AUC within one school | AUC across the 4 schools | Brier |
+|---|---|---|---|
+| scores + length (chosen) | 0.59 (was 0.64) | 0.75 (was 0.80) | 0.176 (was 0.166) |
+| scores only | 0.59 | 0.75 | 0.176 |
+| length only | 0.62 | 0.77 | 0.178 |
+| scores + length, 4 schools only | 0.56 (was 0.61) | 0.82 (was 0.84) | 0.164 |
+
+Bands, held out on the owner's schools: Low 61 stories won 5% (was 2%),
+Medium 96 won 27% (was 31%), High 58 won 53% (was 54%).
+
+Weights per standard deviation: craft +0.32, focus +0.25 (was −0.18),
+quotes +0.25, lede +0.07, log words +0.07, significance +0.01, depth −0.01,
+sourcing −0.02.
+
+**Reading:** the rewording worked at the score level: Focus now points the
+right way, and Layer 4 gives it the second-largest positive weight. But the
+fitted model got slightly worse held out, while the raw total did not. The
+drop is inside the ±0.1 chance range of the 94-story within-school test, so
+it is probably noise, not damage. The model was refitted anyway, because the
+old one was trained on v1 Focus scores and the pinned scorer now produces v2.
+The old model is kept as `data/layer4_model.pre-focus-v2.json.bak`. The weights
+moving a lot between fits (significance +0.10 → +0.01, depth +0.09 → −0.01) suggest
+the seven scores overlap enough that the regression can't tell them apart. With
+518 of 578 winners from the archive, the weights may also mostly learn
+"archive vs school story". That is the next thing to check.
+
 ## Still open
 
-- Focus may need rewording: it separates winners worst and gets a
-  negative weight in Layer 4.
-- Consider averaging two scoring runs per story before Layer 4 (see the
-  consistency check below).
+- ~~Focus may need rewording~~: done (focus-v2, see above).
+- ~~Average two scoring runs per story~~: done (2026-11-04).
+- Layer 4 barely beats length within one school. Try training on the four
+  schools' stories only, fewer inputs (e.g. the total plus length), or a
+  stronger penalty, and check whether weights learned with archive winners
+  carry over within a school.
 - More winners from schools other than Carlmont would make the
   within-school check possible beyond one school.

@@ -211,14 +211,14 @@ def chart_archive(rows):
 # AUC per Layer 3 score (Gemma 12B, 733 feature stories), from the design doc.
 # (name, AUC school winners vs school non-winners, AUC with archive winners added)
 LAYER3_AUC = [
-    ("Total of 7", 0.81, 0.71),
-    ("Significance", 0.83, 0.65),
-    ("Depth", 0.81, 0.65),
-    ("Sourcing", 0.70, 0.63),
-    ("Quotes", 0.70, 0.65),
-    ("Craft", 0.69, 0.67),
-    ("Lede", 0.68, 0.65),
-    ("Focus", 0.53, 0.59),
+    ("Total of 7", 0.82, 0.71),
+    ("Significance", 0.81, 0.64),
+    ("Depth", 0.81, 0.63),
+    ("Focus", 0.72, 0.67),
+    ("Sourcing", 0.71, 0.60),
+    ("Quotes", 0.71, 0.65),
+    ("Craft", 0.70, 0.68),
+    ("Lede", 0.70, 0.66),
     ("Word count alone", 0.77, 0.62),
 ]
 
@@ -249,7 +249,7 @@ def chart_layer3():
     body.append(f'<text class="st" x="{x(0.7)}" y="{H - 8}" text-anchor="middle">'
                 f'AUC: chance a winner outscores a non-winner · 0.5 = coin flip</text>')
     return svg(W, H, "Which scores pick out winners",
-               "Gemma 12B scores on 733 in-depth features (Layer 3 design doc)", "".join(body))
+               "Gemma 12B scores on 733 in-depth features, two runs averaged (Layer 3 design doc)", "".join(body))
 
 
 def main():
