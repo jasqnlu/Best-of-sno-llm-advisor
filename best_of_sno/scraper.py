@@ -56,6 +56,12 @@ _PLATFORM_HOST_SUFFIXES = (
     "gravatar.com",
     "gstatic.com",
     "googleapis.com",
+    # Chart and graphic embeds: they show up as image hosts but are never the
+    # school (Flourish was the top "source_site" in the archive).
+    "flourish.studio",
+    "datawrapper.de",
+    "dwcdn.net",
+    "infogram.com",
 )
 
 _WS_RE = re.compile(r"\s+")

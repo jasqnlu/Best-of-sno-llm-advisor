@@ -143,3 +143,18 @@ def test_import_owner_validates_and_compare_reports_agreement(tmp_path):
     assert "agreement with your hand scores" in report
     row = next(line for line in report.splitlines() if line.startswith("gemma ") and "%" in line)
     assert row.split()[1:] == ["1.00", "100%", "7.0"]
+
+
+def test_run_with_a_variant_uses_its_rubric_and_own_file(tmp_path):
+    _setup(tmp_path, [_row(1, "winner", 1000)])
+    seen = []
+
+    def scorer(model, title, body, variant=None):
+        seen.append(variant)
+        return {"scores": _scores(3)}
+
+    t.run(str(tmp_path), "m", variant="focus-v2", scorer=scorer, log=lambda s: None)
+    assert seen == ["focus-v2"]
+    rec = t.load_scores(t.scores_path(str(tmp_path), "m+focus-v2"))["id1"]
+    assert rec["variant"] == "focus-v2"
+    assert not os.path.exists(t.scores_path(str(tmp_path), "m"))

@@ -74,13 +74,37 @@ DIMENSIONS = [
 ]
 DIMENSION_KEYS = [d[0] for d in DIMENSIONS]
 
+# Candidate rewordings, tried on the 60-story trial before any change to the
+# pinned rubric above. A variant swaps one dimension's "what" and anchors;
+# the scores file name carries the variant so runs never mix.
+VARIANTS = {
+    # Focus v1 gives nearly every story a 4 and barely tracks Claude (rank
+    # agreement 0.11 on the trial). v2 asks for a stated central point and
+    # sections that move it forward, so a 4 has to be earned.
+    "focus-v2": {"focus": (
+        "a central point stated early (a nut graf), and sections that move it forward instead of just adding facts", [
+            "Covers a topic, not a story: you couldn't state its point in one sentence.",
+            "A point can be guessed, but the story never states it; sections read as separate pieces on the same topic.",
+            "The point is stated, but late (after the first five paragraphs) or vaguely; several sections add facts without moving it forward.",
+            "The point is stated early and most sections add something new to it, but at least one section could be cut with little loss.",
+            "A sharp point stated early; every section moves it forward with new evidence, a turn or a complication, and nothing could be cut without loss.",
+        ])},
+}
+
+
+def dimensions(variant: str | None = None) -> list[tuple]:
+    """The rubric's dimensions, with ``variant``'s swaps applied."""
+    swaps = VARIANTS[variant] if variant else {}
+    return [(k, label, *swaps[k]) if k in swaps else (k, label, what, anchors)
+            for k, label, what, anchors in DIMENSIONS]
+
 # Pinned Ollama settings. num_ctx 8192 fits the longest training feature
 # (~6k tokens) and keeps gemma4:12b fully on the 8 GB RTX 2060 Super.
 OLLAMA_OPTIONS = {"temperature": 0, "seed": 0, "num_ctx": 8192}
 OLLAMA_URL = "http://localhost:11434/api/chat"
 
 
-def rubric_text() -> str:
+def rubric_text(variant: str | None = None) -> str:
     """The instructions every scorer gets, word for word."""
     lines = [
         "You are grading a student journalism story for a high school newsroom.",
@@ -92,7 +116,7 @@ def rubric_text() -> str:
         "Then tag the story type as one of: " + ", ".join(STORY_TYPES) + ".",
         "",
     ]
-    for key, label, what, anchors in DIMENSIONS:
+    for key, label, what, anchors in dimensions(variant):
         lines.append(f"## {label} ({key}): {what}")
         lines.extend(f"{i}. {text}" for i, text in enumerate(anchors, start=1))
         lines.append("")
@@ -103,8 +127,8 @@ def rubric_text() -> str:
     return "\n".join(lines)
 
 
-def build_prompt(title: str, body: str) -> str:
-    return f"{rubric_text()}\n\nTITLE: {title}\n\nSTORY:\n{body}"
+def build_prompt(title: str, body: str, variant: str | None = None) -> str:
+    return f"{rubric_text(variant)}\n\nTITLE: {title}\n\nSTORY:\n{body}"
 
 
 def response_schema() -> dict:
@@ -166,7 +190,8 @@ def evidence_found(evidence: str, body: str) -> bool:
     return bool(ev) and ev in _norm(body)
 
 
-def score_with_ollama(model: str, title: str, body: str, *, post=requests.post) -> dict:
+def score_with_ollama(model: str, title: str, body: str, *, variant: str | None = None,
+                      post=requests.post) -> dict:
     """Score one story with the pinned Ollama setup.
 
     Returns ``{"scores": ..., "prompt_tokens", "seconds"}`` or
@@ -175,7 +200,7 @@ def score_with_ollama(model: str, title: str, body: str, *, post=requests.post) 
     payload = {
         "model": model, "stream": False, "think": False,
         "format": response_schema(), "options": OLLAMA_OPTIONS,
-        "messages": [{"role": "user", "content": build_prompt(title, body)}],
+        "messages": [{"role": "user", "content": build_prompt(title, body, variant)}],
     }
     start = time.time()
     resp = post(OLLAMA_URL, json=payload, timeout=1800)

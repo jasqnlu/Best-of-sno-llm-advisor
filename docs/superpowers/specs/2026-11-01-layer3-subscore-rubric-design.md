@@ -184,6 +184,33 @@ few to say the 6-up/2-down tilt is real), but on scores that bunch at 4–5 a 1-
 of the spread Layer 4 learns from. Averaging two runs per story would
 cut it.
 
+## Focus rewording trial (run 2026-11-03 on the PC)
+
+Focus v1 gives nearly every story a 4 or 5 and gets a negative Layer 4
+weight (−0.18). `focus-v2` (`scorer.VARIANTS`) asks for a central point
+stated early (a nut graf) and sections that move it forward; a 4 now
+requires that at most one section could be cut. Run with
+`python -m best_of_sno.layer3_trial run gemma4:12b --variant focus-v2` on
+the same 60 trial stories and pinned setup.
+
+| Focus | v1 | v2 |
+|---|---|---|
+| Scores 2 / 3 / 4 / 5 | 0 / 1 / 40 / 19 | 1 / 19 / 38 / 2 |
+| Winner avg vs non-winner avg | 4.23 vs 4.37 | 3.77 vs 3.60 |
+| AUC (winners vs matched non-winners) | 0.43 | 0.58 |
+| Rank agreement with Claude's Focus | 0.11 | 0.24 |
+| Rank correlation with word count | 0.37 | 0.38 |
+| Rank correlation with the other six scores | 0.53 | 0.70 |
+
+The other six scores barely moved (49–54 of 60 identical per dimension;
+their AUCs within ±0.03). Total AUC 0.62 → 0.64.
+
+**Reading:** v2 fixes the ceiling and now points the right way, but 60
+stories is a small test, and v2 overlaps more with the other scores, so
+its own weight in Layer 4 may stay small. **Decision [owner, pending]:**
+adopt v2 into the pinned rubric and re-score all 733 features with two
+runs each (about 12 hours on the PC), or keep v1.
+
 ## Still open
 
 - Focus may need rewording: it separates winners worst and gets a

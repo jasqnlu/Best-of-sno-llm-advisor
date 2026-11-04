@@ -389,7 +389,7 @@ cd Best-of-sno-llm-advisor
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r best_of_sno/requirements.txt pytest
 
-python -m pytest best_of_sno/tests -q    # 254 tests, fully offline, ~3 s
+python -m pytest best_of_sno/tests -q    # 262 tests, fully offline, ~3 s
 ```
 
 Dependencies are deliberately small: `requests`, `feedparser`, `beautifulsoup4`,
@@ -410,11 +410,13 @@ python -m best_of_sno.scraper
 python -m best_of_sno.layer2
 tail -f best_of_sno/logs/layer2.log
 
-# 3. Clean training set
+# 3. Clean training set (and the winners' source_site column)
 python -m best_of_sno.prep
+python -m best_of_sno.sources                         # also writes school_sites.csv
 
 # 4. Score every in-depth feature (hours; needs Ollama), then export
 python -m best_of_sno.layer3 score gemma4:12b
+python -m best_of_sno.layer3 score gemma4:12b --run 2  # optional second run; export averages
 python -m best_of_sno.layer3 export gemma4:12b
 python -m best_of_sno.layer3 consistency gemma4:12b   # re-score 30; repeats should match
 
@@ -442,11 +444,12 @@ pick up where it stopped.
 | `python -m best_of_sno.layer2 --reparse` | Rebuild rows from saved raw pages with the current parser, offline |
 | `python -m best_of_sno.layer2 --refetch-thin` | Re-download rows under 200 words |
 | `python -m best_of_sno.prep` | `--data-dir` |
-| `python -m best_of_sno.layer3 score MODEL` | Score every in-depth feature with the pinned scorer (resumable) |
-| `python -m best_of_sno.layer3 export MODEL` | Write `layer3_scores.csv` |
+| `python -m best_of_sno.sources` | Clean the winners' `source_site` from school names; write `school_sites.csv` · `--dry-run` |
+| `python -m best_of_sno.layer3 score MODEL` | Score every in-depth feature with the pinned scorer (resumable) · `--run N` fills a further run |
+| `python -m best_of_sno.layer3 export MODEL` | Write `layer3_scores.csv`, averaging every run a story has |
 | `python -m best_of_sno.layer3 consistency MODEL` | Re-score 30 scored stories (fixed sample) and report any that changed; the main scores file is untouched |
 | `python -m best_of_sno.layer4 evaluate` · `fit` | Cross-validated report (incl. within-school AUC) · save the fitted model |
-| `python -m best_of_sno.layer3_trial select` · `run MODEL` · `compare` | The 60-story scorer trial |
+| `python -m best_of_sno.layer3_trial select` · `run MODEL` · `compare` | The 60-story scorer trial · `run MODEL --variant focus-v2` tries a rubric rewording |
 | `python -m best_of_sno.layer3_trial handscore-page` · `import-owner FILE` | Optional hand-scoring page and import |
 
 `--reparse` exists because parser fixes used to mean a 3.5-hour re-download. Raw
@@ -467,7 +470,8 @@ or republished.
 | `layer2.csv` | 1,792 | Labeled school-site stories (`winner` / `non_winner`) |
 | `uncertain.csv` | 45 | Stories the labeler wouldn't call, with the candidate winner beside each |
 | `training.csv` | 1,646 | Cleaned training set (81 winners, 1,565 non-winners) |
-| `layer3_scores.csv` | 733 | Seven grades, total, word count and story type per feature story (no story text) |
+| `school_sites.csv` | 296 | Each winning school's site and winner count, for picking schools to crawl (no story text) |
+| `layer3_scores.csv` | 733 | Seven grades, total, word count, story type and number of runs per feature story (no story text) |
 | `layer3_trial/` | – | Scorer-trial picks and each scorer's replies |
 | `pages/` | – | Gzipped raw pages for `--reparse` |
 | `*state.json` | – | Resume checkpoints |
@@ -488,13 +492,15 @@ best_of_sno/
 ├── backfill.py        Layer 1b · historical sitemap backfill
 ├── layer2.py          Layer 2  · school-site crawl, parser, labeler, --relabel/--reparse
 ├── prep.py            training.csv builder (source-tell removal)
+├── sources.py         winners' source_site cleanup + school_sites.csv
 ├── scorer.py          Layer 3  · the rubric and the pinned Ollama scorer
 ├── layer3.py          Layer 3  · score all features, export layer3_scores.csv
-├── layer3_trial.py    Layer 3  · 60-story three-way scorer trial
+├── layer3_trial.py    Layer 3  · 60-story three-way scorer trial, rubric variants
+├── layer4.py          Layer 4  · the chance bar (logistic regression)
 ├── requirements.txt
 ├── data/              (gitignored) CSVs, scores, state, raw pages
 ├── logs/              (gitignored) one log per job
-└── tests/             24 test files, 243 tests, offline
+└── tests/             26 test files, 262 tests, offline
     └── fixtures/      saved real pages, sitemaps and feeds from each site
 docs/
 ├── images/            README charts + the script that draws them
@@ -560,20 +566,22 @@ test and a fix:
 | Training-data prep | ✅ built · `training.csv` ready |
 | Layer 3 · sub-score rubric + scorer | ✅ built · Gemma 12B scored 733 features |
 | Layer 4 · chance bar | ✅ built (PR #14): logistic regression, Low / Medium / High |
-| Advice model | ⬜ planned: QDoRA-fine-tuned Gemma |
+| Advice model | ⬜ designed, not built: QDoRA-fine-tuned Gemma ([design proposal](docs/superpowers/specs/2026-11-03-advice-model-design.md)) |
 
 Also on the list:
-- reword the Focus dimension: it still gets a negative Layer 4 weight (−0.18) and
-  almost every story scores 4 on it, so new wording is being tried on the 60-story
-  trial set before any full re-score;
+- decide on the Focus rewording (`focus-v2`): on the 60-story trial it lifts Focus
+  AUC from 0.43 to 0.58 and spreads scores out (v1 was almost all 4s and 5s);
+  adopting it means re-scoring all 733 features
+  ([results](docs/superpowers/specs/2026-11-01-layer3-subscore-rubric-design.md#focus-rewording-trial-run-2026-11-03-on-the-pc));
 - average two scoring runs per story at the next full re-score: the consistency check
   found 22 of 30 repeats identical, with every change exactly 1 point
   ([details](docs/superpowers/specs/2026-11-01-layer3-subscore-rubric-design.md#consistency-check-run-2026-11-02-on-the-pc));
-- clean the archive's noisy `source_site` column before using it to pick more
-  schools.
+- pick more schools to crawl from `school_sites.csv`.
 
 Done: the editor's own publication (theburlingameb.org) is one of the four crawled
-sites; the last `author-date` uncertain row was settled by hand.
+sites; the last `author-date` uncertain row was settled by hand; the winners'
+`source_site` was cleaned (`python -m best_of_sno.sources`: blanks 1,153 → 648,
+Flourish chart embeds no longer count as a school).
 
 ---
 

@@ -3,6 +3,7 @@
     python -m best_of_sno.layer3_trial select      # pick the 60 stories
     python -m best_of_sno.layer3_trial run gemma4:e4b
     python -m best_of_sno.layer3_trial run gemma4:12b
+    python -m best_of_sno.layer3_trial run gemma4:12b --variant focus-v2
     python -m best_of_sno.layer3_trial import-claude  # check + load subagent scores
     python -m best_of_sno.layer3_trial handscore-page # page for the owner's 5 stories
     python -m best_of_sno.layer3_trial import-owner ~/Downloads/handscores.jsonl
@@ -24,7 +25,7 @@ import os
 import random
 import statistics
 
-from .scorer import (DIMENSION_KEYS, DIMENSIONS, STORY_TYPES, evidence_found,
+from .scorer import (DIMENSION_KEYS, DIMENSIONS, STORY_TYPES, VARIANTS, evidence_found,
                      parse_scores, score_with_ollama)
 
 TRIAL_SIZE = 30          # winners; the same number of non-winners is matched
@@ -112,20 +113,30 @@ def load_scores(path: str) -> dict[str, dict]:
     return out
 
 
-def run(data_dir: str, model: str, *, scorer=score_with_ollama, log=print) -> dict:
+def run_name(model: str, variant: str | None = None) -> str:
+    return f"{model}+{variant}" if variant else model
+
+
+def run(data_dir: str, model: str, *, variant: str | None = None, scorer=score_with_ollama,
+        log=print) -> dict:
+    """Score the trial stories; with ``variant``, using that rubric rewording
+    (see ``scorer.VARIANTS``), into its own scores file."""
     stories = _read_csv(os.path.join(trial_dir(data_dir), "stories.csv"))
-    path = scores_path(data_dir, model)
+    name = run_name(model, variant)
+    path = scores_path(data_dir, name)
+    extra = {"variant": variant} if variant else {}
     done = {i for i, r in load_scores(path).items() if "scores" in r}
     counts = {"scored": 0, "errors": 0, "skipped": len(done)}
     with open(path, "a", encoding="utf-8") as f:
         for n, s in enumerate(stories, start=1):
             if s["id"] in done:
                 continue
-            rec = {"id": s["id"], "model": model, **scorer(model, s["title"], s["body"])}
+            rec = {"id": s["id"], "model": model, **extra,
+                   **scorer(model, s["title"], s["body"], **extra)}
             f.write(json.dumps(rec) + "\n")
             f.flush()
             counts["errors" if "error" in rec else "scored"] += 1
-            log(f"[{n}/{len(stories)}] {model} {rec.get('seconds')}s "
+            log(f"[{n}/{len(stories)}] {name} {rec.get('seconds')}s "
                 + (f"ERROR {rec['error']}" if "error" in rec else "ok"))
     return counts
 
@@ -411,6 +422,8 @@ def main(argv=None) -> None:
     sub.add_parser("select")
     r = sub.add_parser("run")
     r.add_argument("model")
+    r.add_argument("--variant", choices=sorted(VARIANTS),
+                   help="score with a candidate rubric rewording (own scores file)")
     sub.add_parser("import-claude")
     sub.add_parser("handscore-page")
     o = sub.add_parser("import-owner")
@@ -424,7 +437,7 @@ def main(argv=None) -> None:
     elif a.cmd == "import-owner":
         print(import_owner(a.data_dir, a.file))
     elif a.cmd == "run":
-        print(run(a.data_dir, a.model))
+        print(run(a.data_dir, a.model, variant=a.variant))
     elif a.cmd == "import-claude":
         print(import_claude(a.data_dir))
     else:
