@@ -60,6 +60,11 @@ Best of SNO feed + sitemaps ──(Layer 1)──▶ winners corpus (archive/new
 | 4 | Chance-bar model (logistic regression on sub-scores) | Not started. |
 
 ### A design pivot to know about
+
+> **Reversed 2026-11-01:** the owner brought the QDoRA fine-tuned Gemma back
+> as the advice model. See
+> `docs/superpowers/specs/2026-11-03-advice-model-design.md`. The paragraph
+> below is kept as history.
 The original plan (2026-10-28) had Layer 3 as a **QDoRA fine-tuned advice LLM** on Google Colab. During Layer 2 brainstorming (2026-10-29) this was deliberately cut: distilling Claude's critiques into a small model gives a weaker copy of Claude. The new plan:
 - **Lead with the empirical chance score** (Layer 4), the part that needs real labeled data.
 - **Advice = Claude at inference time,** grounded on the Layer 4 score and its sub-scores, plus retrieved archive winners as examples.
