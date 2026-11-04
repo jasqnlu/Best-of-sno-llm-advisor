@@ -21,3 +21,5 @@ best_of_sno/data/layer2_state.json
 best_of_sno/data/pages/
 best_of_sno/logs/*.log
 best_of_sno/data/layer3_trial/
+best_of_sno/data/*.bak
+best_of_sno/logs/*.csv
