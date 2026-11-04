@@ -153,8 +153,8 @@ def test_run_with_a_variant_uses_its_rubric_and_own_file(tmp_path):
         seen.append(variant)
         return {"scores": _scores(3)}
 
-    t.run(str(tmp_path), "m", variant="focus-v2", scorer=scorer, log=lambda s: None)
-    assert seen == ["focus-v2"]
-    rec = t.load_scores(t.scores_path(str(tmp_path), "m+focus-v2"))["id1"]
-    assert rec["variant"] == "focus-v2"
+    t.run(str(tmp_path), "m", variant="focus-v1", scorer=scorer, log=lambda s: None)
+    assert seen == ["focus-v1"]
+    rec = t.load_scores(t.scores_path(str(tmp_path), "m+focus-v1"))["id1"]
+    assert rec["variant"] == "focus-v1"
     assert not os.path.exists(t.scores_path(str(tmp_path), "m"))

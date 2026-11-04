@@ -43,12 +43,15 @@ DIMENSIONS = [
         "Most quotes reveal feeling, insight or the speaker's voice; little filler.",
         "At least one quote you'd remember that only that person could have said; every quote earns its place.",
     ]),
-    ("focus", "Focus", "stays on one angle; every section serves it", [
-        "No clear angle; a list of facts or events.",
-        "An angle exists, but the story wanders into unrelated sections.",
-        "Mostly on one angle, with one or two sections that drift.",
-        "Clear angle; nearly every section serves it.",
-        "One sharp angle; every section builds on it and nothing could be cut without loss.",
+    # Focus reworded 2026-11-03 (owner approved) after the focus-v2 trial: the
+    # first wording gave nearly every story a 4 or 5. It is kept in VARIANTS
+    # as "focus-v1".
+    ("focus", "Focus", "a central point stated early (a nut graf), and sections that move it forward instead of just adding facts", [
+        "Covers a topic, not a story: you couldn't state its point in one sentence.",
+        "A point can be guessed, but the story never states it; sections read as separate pieces on the same topic.",
+        "The point is stated, but late (after the first five paragraphs) or vaguely; several sections add facts without moving it forward.",
+        "The point is stated early and most sections add something new to it, but at least one section could be cut with little loss.",
+        "A sharp point stated early; every section moves it forward with new evidence, a turn or a complication, and nothing could be cut without loss.",
     ]),
     ("depth", "Reporting depth", "facts, data, documents, scenes beyond interviews", [
         "Only the writer's opinion, or a single interview.",
@@ -74,20 +77,20 @@ DIMENSIONS = [
 ]
 DIMENSION_KEYS = [d[0] for d in DIMENSIONS]
 
-# Candidate rewordings, tried on the 60-story trial before any change to the
-# pinned rubric above. A variant swaps one dimension's "what" and anchors;
-# the scores file name carries the variant so runs never mix.
+# Other rubric wordings, for trying on the 60-story trial. A variant swaps one
+# dimension's "what" and anchors; the scores file name carries the variant so
+# runs never mix.
 VARIANTS = {
-    # Focus v1 gives nearly every story a 4 and barely tracks Claude (rank
-    # agreement 0.11 on the trial). v2 asks for a stated central point and
-    # sections that move it forward, so a 4 has to be earned.
-    "focus-v2": {"focus": (
-        "a central point stated early (a nut graf), and sections that move it forward instead of just adding facts", [
-            "Covers a topic, not a story: you couldn't state its point in one sentence.",
-            "A point can be guessed, but the story never states it; sections read as separate pieces on the same topic.",
-            "The point is stated, but late (after the first five paragraphs) or vaguely; several sections add facts without moving it forward.",
-            "The point is stated early and most sections add something new to it, but at least one section could be cut with little loss.",
-            "A sharp point stated early; every section moves it forward with new evidence, a turn or a complication, and nothing could be cut without loss.",
+    # The first Focus wording (2026-11-01 to 11-03). On the trial it gave 59
+    # of 60 stories a 4 or 5 and separated winners worse than chance (AUC
+    # 0.43; the current wording reached 0.58).
+    "focus-v1": {"focus": (
+        "stays on one angle; every section serves it", [
+            "No clear angle; a list of facts or events.",
+            "An angle exists, but the story wanders into unrelated sections.",
+            "Mostly on one angle, with one or two sections that drift.",
+            "Clear angle; nearly every section serves it.",
+            "One sharp angle; every section builds on it and nothing could be cut without loss.",
         ])},
 }
 

@@ -21,7 +21,7 @@ Seven dimensions, each with a five-level anchor table (full text in
 | lede | the opening pulls you in and points at the stakes |
 | sourcing | people with a direct stake; a range of viewpoints; named over anonymous |
 | quotes | quotes reveal feeling or insight, not logistics |
-| focus | stays on one angle; every section serves it |
+| focus | a central point stated early (a nut graf), and sections that move it forward (reworded 2026-11-03; see below) |
 | depth | facts, data, documents, scenes beyond interviews |
 | significance | why readers should care; stakes beyond the school |
 | craft | clear sentences, flow between sections, a real ending |
@@ -207,9 +207,14 @@ their AUCs within ±0.03). Total AUC 0.62 → 0.64.
 
 **Reading:** v2 fixes the ceiling and now points the right way, but 60
 stories is a small test, and v2 overlaps more with the other scores, so
-its own weight in Layer 4 may stay small. **Decision [owner, pending]:**
-adopt v2 into the pinned rubric and re-score all 733 features with two
-runs each (about 12 hours on the PC), or keep v1.
+its own weight in Layer 4 may stay small.
+
+**Decision [owner, 2026-11-03]: adopt v2.** It is now the pinned Focus
+wording in `DIMENSIONS`; the first wording stays in `VARIANTS` as
+`focus-v1`. All 733 features are re-scored with two runs each and the
+export averages them. The trial's v2 scores used the identical prompt, so
+they serve as run 1 for those 60 stories. The v1 scores are kept beside
+the data as `*.focus-v1.*` files.
 
 ## Still open
 

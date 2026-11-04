@@ -569,9 +569,9 @@ test and a fix:
 | Advice model | ⬜ designed, not built: QDoRA-fine-tuned Gemma ([design proposal](docs/superpowers/specs/2026-11-03-advice-model-design.md)) |
 
 Also on the list:
-- decide on the Focus rewording (`focus-v2`): on the 60-story trial it lifts Focus
-  AUC from 0.43 to 0.58 and spreads scores out (v1 was almost all 4s and 5s);
-  adopting it means re-scoring all 733 features
+- finish the re-score with the reworded Focus (adopted 2026-11-03: on the 60-story
+  trial it lifts Focus AUC from 0.43 to 0.58 and spreads scores out), two runs per
+  story, then refit Layer 4 and update the numbers in this README
   ([results](docs/superpowers/specs/2026-11-01-layer3-subscore-rubric-design.md#focus-rewording-trial-run-2026-11-03-on-the-pc));
 - average two scoring runs per story at the next full re-score: the consistency check
   found 22 of 30 repeats identical, with every change exactly 1 point
