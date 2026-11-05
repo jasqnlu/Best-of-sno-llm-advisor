@@ -20,7 +20,7 @@ schools that weren't picked.
 > the advice model comes next. See [Roadmap](#roadmap).
 
 ![Python 3.14](https://img.shields.io/badge/python-3.14-3776ab)
-![Tests: 262 passing, offline](https://img.shields.io/badge/tests-262%20passing%2C%20offline-2ea44f)
+![Tests: 312 passing, offline](https://img.shields.io/badge/tests-312%20passing%2C%20offline-2ea44f)
 ![Data: local only](https://img.shields.io/badge/story%20text-never%20committed-lightgrey)
 
 ---
@@ -383,6 +383,16 @@ examples, then improves through rounds where Gemma drafts several versions and a
 stronger model grades them against a checklist ("specific to this draft?",
 "points at the weakest scores?").
 
+`advice.py` has the steps before training: the pinned prompt, round-0 batches
+for Claude subagents, the code checks every piece of advice must pass, the
+chat-format export for Colab, and the "Stories to learn from" part. That last
+part is picked by code, not the model: archive winners on a similar topic
+(local `nomic-embed-text` embeddings) that scored 5 on the draft's top fixes,
+so every link is real. Drafts reach the advice model with page leftovers
+removed (`prep.strip_layout`: Best of SNO's republishing footer, photo credits and their captions, pull quotes,
+repeated sentences, video-player text, split drop caps), and only stories the
+scorer tagged feature or profile are used.
+
 ---
 
 ## Getting started
@@ -395,7 +405,7 @@ cd Best-of-sno-llm-advisor
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r best_of_sno/requirements.txt pytest
 
-python -m pytest best_of_sno/tests -q    # 262 tests, fully offline, ~3 s
+python -m pytest best_of_sno/tests -q    # 312 tests, fully offline, ~3 s
 ```
 
 Dependencies are deliberately small: `requests`, `feedparser`, `beautifulsoup4`,
@@ -430,7 +440,16 @@ python -m best_of_sno.layer3 consistency gemma4:12b   # re-score 30; repeats sho
 python -m best_of_sno.layer4 evaluate
 python -m best_of_sno.layer4 fit
 
-# 6. Refresh the README charts
+# 6. Advice: round-0 examples and the Colab export (needs `ollama pull nomic-embed-text`)
+python -m best_of_sno.advice embed                # embed every scored feature (~1 min)
+python -m best_of_sno.advice export-examples --n 100
+#    ... Claude subagents write data/advice/round0/out_*.jsonl ...
+python -m best_of_sno.advice import               # code checks; passing advice -> examples.jsonl
+python -m best_of_sno.advice export-train         # -> data/advice/train.jsonl for Colab
+python -m best_of_sno.advice check-train          # no held-out stories, everything fits
+#    upload train.jsonl to MyDrive/sno-advisor/, run notebooks/qdora_advice.ipynb on Colab Pro
+
+# 7. Refresh the README charts
 python docs/images/make_charts.py
 ```
 
@@ -455,6 +474,10 @@ pick up where it stopped.
 | `python -m best_of_sno.layer3 export MODEL` | Write `layer3_scores.csv`, averaging every run a story has |
 | `python -m best_of_sno.layer3 consistency MODEL` | Re-score 30 scored stories (fixed sample) and report any that changed; the main scores file is untouched |
 | `python -m best_of_sno.layer4 evaluate` · `fit` | Cross-validated report (incl. within-school AUC) · save the fitted model |
+| `python -m best_of_sno.advice show ID` | The pinned advice prompt for one scored story |
+| `python -m best_of_sno.advice export-examples [--n 100] [--round R --skip-rounds round0]` · `import [--round R]` | Batches for Claude subagents (25 stories each), skipping stories already done · check their advice |
+| `python -m best_of_sno.advice export-train` · `check-train` | Chat-format JSONL for the Colab notebook (refuses held-out stories) · check it before uploading |
+| `python -m best_of_sno.advice embed` · `inspire ID` | Cache story embeddings · print "Stories to learn from" for one story |
 | `python -m best_of_sno.layer3_trial select` · `run MODEL` · `compare` | The 60-story scorer trial · `run MODEL --variant focus-v2` tries a rubric rewording |
 | `python -m best_of_sno.layer3_trial handscore-page` · `import-owner FILE` | Optional hand-scoring page and import |
 
@@ -503,10 +526,12 @@ best_of_sno/
 ├── layer3.py          Layer 3  · score all features, export layer3_scores.csv
 ├── layer3_trial.py    Layer 3  · 60-story three-way scorer trial, rubric variants
 ├── layer4.py          Layer 4  · the chance bar (logistic regression)
+├── advice.py          Advice   · pinned prompt, example batches, code checks, Colab export, stories to learn from
+├── advice_train.py    Advice   · training helpers the Colab notebook imports (masking, split, padding)
 ├── requirements.txt
 ├── data/              (gitignored) CSVs, scores, state, raw pages
 ├── logs/              (gitignored) one log per job
-└── tests/             26 test files, 262 tests, offline
+└── tests/             28 test files, 312 tests, offline
     └── fixtures/      saved real pages, sitemaps and feeds from each site
 docs/
 ├── images/            README charts + the script that draws them
@@ -572,14 +597,18 @@ test and a fix:
 | Training-data prep | ✅ built · `training.csv` ready |
 | Layer 3 · sub-score rubric + scorer | ✅ built · Gemma 12B scored 733 features |
 | Layer 4 · chance bar | ✅ built (PR #14): logistic regression, Low / Medium / High |
-| Advice model | ⬜ designed, not built: QDoRA-fine-tuned Gemma ([design proposal](docs/superpowers/specs/2026-11-03-advice-model-design.md)) |
+| Advice model | 🟨 pre-training steps built (`advice.py`); 299 round-0 examples written and checked; Colab notebook ready (`notebooks/qdora_advice.ipynb`); next: train on Colab Pro. QDoRA-fine-tuned Gemma 12B ([design](docs/superpowers/specs/2026-11-03-advice-model-design.md)) |
 
 Also on the list:
 - find out why Layer 4 gains little from the scores within one school: the
   regression learns mostly from archive winners (518 of 578), so its weights may
   suit "archive vs school" better than "winner vs non-winner at one school"
   ([details](docs/superpowers/specs/2026-11-01-layer3-subscore-rubric-design.md#re-score-with-focus-v2-two-runs-averaged-run-2026-11-04-on-the-pc));
-- pick more schools to crawl from `school_sites.csv`.
+- pick more schools to crawl from `school_sites.csv`;
+- re-score with the republishing footer removed: 511 of 518 archive winners end
+  with "This story was originally published on …", which no school story has,
+  and the scorer saw it (it even quoted it as Craft evidence). It may be part of
+  why the scores separate archive winners better than winners inside one school.
 
 Done: all 733 features re-scored with the reworded Focus, two runs each, averaged,
 and Layer 4 refitted (2026-11-04); the editor's own publication (theburlingameb.org) is one of the four crawled
