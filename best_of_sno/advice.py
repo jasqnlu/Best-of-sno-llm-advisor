@@ -5,6 +5,7 @@ training export for Colab, and the "Stories to learn from" picks.
     python -m best_of_sno.advice export-examples --n 100 # batches for Claude subagents
     python -m best_of_sno.advice import                  # check the subagents' advice
     python -m best_of_sno.advice export-train            # chat JSONL for Colab
+    python -m best_of_sno.advice check-train             # check it before uploading
     python -m best_of_sno.advice embed                   # cache embeddings (Ollama)
     python -m best_of_sno.advice inspire ID              # "Stories to learn from" for one story
 
@@ -624,6 +625,7 @@ def main(argv=None) -> None:
                     help="leave out stories with passing advice in these rounds")
     sub.add_parser("import").add_argument("--round", default="round0")
     sub.add_parser("export-train").add_argument("--rounds", nargs="+", default=["round0"])
+    sub.add_parser("check-train")
     sub.add_parser("embed").add_argument("--model", default=EMBED_MODEL)
     ins = sub.add_parser("inspire")
     ins.add_argument("id")
@@ -637,6 +639,9 @@ def main(argv=None) -> None:
         print(json.dumps(import_examples(a.data_dir, round_name=a.round), indent=1))
     elif a.cmd == "export-train":
         print(export_train(a.data_dir, rounds=tuple(a.rounds)))
+    elif a.cmd == "check-train":
+        from .advice_train import check_file
+        print(check_file(advice_dir(a.data_dir, "train.jsonl"), heldout_ids(a.data_dir)))
     elif a.cmd == "embed":
         print(embed(a.data_dir, model=a.model))
     else:

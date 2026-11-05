@@ -261,6 +261,28 @@ the README list.
   before/after comparisons are fair), and load it in Ollama under a new
   name (e.g. `sno-advisor:r0`).
 
+### The notebook (built 2026-11-04)
+
+`notebooks/qdora_advice.ipynb`, with the masking and split in
+`best_of_sno/advice_train.py` (tested offline). Checked on the PC without a
+GPU:
+- **Base model:** `google/gemma-4-12B-it` (the PC's `gemma4:12b` is Gemma
+  4, 11.9B), loaded with `AutoModelForMultimodalLM`; no access request
+  needed. Adapters go on the language model's projections only.
+- **Prompt format:** each example is the chat template's generation prompt
+  for the user turn with `enable_thinking=False` (ending in an empty
+  `<|channel>thought
+<channel|>`), then the advice and `<turn|>` (one
+  token). Ollama's `gemma4:12b` with `think: false` counts the same 14
+  prompt tokens for "Hello", so training and use match.
+- **Real token counts:** 284 training examples, 15 validation; all fit in
+  8,192 (longest 6,433, median 2,338); ~730k tokens per epoch; advice
+  median 315 tokens.
+- **Untested until it runs on Colab:** training itself, the merge, and the
+  llama.cpp GGUF conversion (step 8 depends on llama.cpp converting Gemma
+  4; the adapter is saved to Drive before that, so a failure there loses
+  nothing).
+
 ## Evaluation
 
 On the 60 held-out stories, compare untrained Gemma, each fine-tuned round

@@ -20,7 +20,7 @@ schools that weren't picked.
 > the advice model comes next. See [Roadmap](#roadmap).
 
 ![Python 3.14](https://img.shields.io/badge/python-3.14-3776ab)
-![Tests: 306 passing, offline](https://img.shields.io/badge/tests-306%20passing%2C%20offline-2ea44f)
+![Tests: 312 passing, offline](https://img.shields.io/badge/tests-312%20passing%2C%20offline-2ea44f)
 ![Data: local only](https://img.shields.io/badge/story%20text-never%20committed-lightgrey)
 
 ---
@@ -405,7 +405,7 @@ cd Best-of-sno-llm-advisor
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r best_of_sno/requirements.txt pytest
 
-python -m pytest best_of_sno/tests -q    # 306 tests, fully offline, ~3 s
+python -m pytest best_of_sno/tests -q    # 312 tests, fully offline, ~3 s
 ```
 
 Dependencies are deliberately small: `requests`, `feedparser`, `beautifulsoup4`,
@@ -446,6 +446,8 @@ python -m best_of_sno.advice export-examples --n 100
 #    ... Claude subagents write data/advice/round0/out_*.jsonl ...
 python -m best_of_sno.advice import               # code checks; passing advice -> examples.jsonl
 python -m best_of_sno.advice export-train         # -> data/advice/train.jsonl for Colab
+python -m best_of_sno.advice check-train          # no held-out stories, everything fits
+#    upload train.jsonl to MyDrive/sno-advisor/, run notebooks/qdora_advice.ipynb on Colab Pro
 
 # 7. Refresh the README charts
 python docs/images/make_charts.py
@@ -474,7 +476,7 @@ pick up where it stopped.
 | `python -m best_of_sno.layer4 evaluate` · `fit` | Cross-validated report (incl. within-school AUC) · save the fitted model |
 | `python -m best_of_sno.advice show ID` | The pinned advice prompt for one scored story |
 | `python -m best_of_sno.advice export-examples [--n 100] [--round R --skip-rounds round0]` · `import [--round R]` | Batches for Claude subagents (25 stories each), skipping stories already done · check their advice |
-| `python -m best_of_sno.advice export-train` | Chat-format JSONL for the Colab notebook; refuses held-out stories |
+| `python -m best_of_sno.advice export-train` · `check-train` | Chat-format JSONL for the Colab notebook (refuses held-out stories) · check it before uploading |
 | `python -m best_of_sno.advice embed` · `inspire ID` | Cache story embeddings · print "Stories to learn from" for one story |
 | `python -m best_of_sno.layer3_trial select` · `run MODEL` · `compare` | The 60-story scorer trial · `run MODEL --variant focus-v2` tries a rubric rewording |
 | `python -m best_of_sno.layer3_trial handscore-page` · `import-owner FILE` | Optional hand-scoring page and import |
@@ -525,10 +527,11 @@ best_of_sno/
 ├── layer3_trial.py    Layer 3  · 60-story three-way scorer trial, rubric variants
 ├── layer4.py          Layer 4  · the chance bar (logistic regression)
 ├── advice.py          Advice   · pinned prompt, example batches, code checks, Colab export, stories to learn from
+├── advice_train.py    Advice   · training helpers the Colab notebook imports (masking, split, padding)
 ├── requirements.txt
 ├── data/              (gitignored) CSVs, scores, state, raw pages
 ├── logs/              (gitignored) one log per job
-└── tests/             27 test files, 306 tests, offline
+└── tests/             28 test files, 312 tests, offline
     └── fixtures/      saved real pages, sitemaps and feeds from each site
 docs/
 ├── images/            README charts + the script that draws them
@@ -594,7 +597,7 @@ test and a fix:
 | Training-data prep | ✅ built · `training.csv` ready |
 | Layer 3 · sub-score rubric + scorer | ✅ built · Gemma 12B scored 733 features |
 | Layer 4 · chance bar | ✅ built (PR #14): logistic regression, Low / Medium / High |
-| Advice model | 🟨 pre-training steps built (`advice.py`); 299 round-0 examples written and checked; next: Colab notebook, training. QDoRA-fine-tuned Gemma 12B ([design](docs/superpowers/specs/2026-11-03-advice-model-design.md)) |
+| Advice model | 🟨 pre-training steps built (`advice.py`); 299 round-0 examples written and checked; Colab notebook ready (`notebooks/qdora_advice.ipynb`); next: train on Colab Pro. QDoRA-fine-tuned Gemma 12B ([design](docs/superpowers/specs/2026-11-03-advice-model-design.md)) |
 
 Also on the list:
 - find out why Layer 4 gains little from the scores within one school: the
