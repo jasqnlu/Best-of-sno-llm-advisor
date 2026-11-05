@@ -20,7 +20,7 @@ schools that weren't picked.
 > the advice model comes next. See [Roadmap](#roadmap).
 
 ![Python 3.14](https://img.shields.io/badge/python-3.14-3776ab)
-![Tests: 292 passing, offline](https://img.shields.io/badge/tests-292%20passing%2C%20offline-2ea44f)
+![Tests: 293 passing, offline](https://img.shields.io/badge/tests-293%20passing%2C%20offline-2ea44f)
 ![Data: local only](https://img.shields.io/badge/story%20text-never%20committed-lightgrey)
 
 ---
@@ -402,7 +402,7 @@ cd Best-of-sno-llm-advisor
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r best_of_sno/requirements.txt pytest
 
-python -m pytest best_of_sno/tests -q    # 292 tests, fully offline, ~3 s
+python -m pytest best_of_sno/tests -q    # 293 tests, fully offline, ~3 s
 ```
 
 Dependencies are deliberately small: `requests`, `feedparser`, `beautifulsoup4`,
@@ -525,7 +525,7 @@ best_of_sno/
 ├── requirements.txt
 ├── data/              (gitignored) CSVs, scores, state, raw pages
 ├── logs/              (gitignored) one log per job
-└── tests/             27 test files, 292 tests, offline
+└── tests/             27 test files, 293 tests, offline
     └── fixtures/      saved real pages, sitemaps and feeds from each site
 docs/
 ├── images/            README charts + the script that draws them

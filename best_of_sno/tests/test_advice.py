@@ -98,6 +98,13 @@ def test_checks_catch_each_problem(change, expected):
     assert any(expected in p for p in problems), problems
 
 
+def test_percent_or_word_count_inside_a_draft_quote_is_allowed():
+    body = BODY + " The sale promised 50% off for the first 300 words of every essay."
+    text = GOOD.replace('"He has seen a lot of changes over the years."',
+                        '"The sale promised 50% off for the first 300 words of every essay."')
+    assert A.check_advice(text, _story(body=body)) == []
+
+
 def test_fixes_out_of_order_fail():
     lines = GOOD.split("\n")       # 0 heading, 1-2 lede fix, 3 sourcing fix, 4 depth fix
     swapped = [lines[0], lines[3].replace("2.", "1.", 1), lines[1].replace("1.", "2.", 1), lines[2]] + lines[4:]

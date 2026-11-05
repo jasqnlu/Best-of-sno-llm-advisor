@@ -162,6 +162,27 @@ checklist score stops rising.
 5. No generic tips ("show, don't tell", "add more quotes") without a
    specific place in the draft.
 
+### Round 0 results (2026-11-04)
+
+Four Claude Code subagents wrote advice for the 100 round-0 stories (25
+each), checking their own answers with `check_advice` and fixing failures.
+
+- **Code checks:** 93 of 100 passed on the first try; all 100 passed after
+  fixes, and `import` accepted all 100. Every first-try failure was a quote
+  problem: six were 25+ words, and one dropped an asterisk from the draft.
+- **Change from this round:** the percentage and length bans no longer
+  apply inside quotes copied from the draft (several drafts quote "50%
+  off"-style figures). Links stay banned everywhere.
+- **Shape:** median 243 words of advice (longest 306). First fixes: craft
+  44, lede 38, focus 5, significance 4, depth 4, quotes 3, sourcing 1, and
+  one all-5 story with none.
+- **Training file:** `data/advice/train.jsonl`, 100 examples, 1.2 MB.
+- **Found in the drafts:** many school-site bodies still carry page
+  clutter: pull quotes repeated word for word, photo captions and credits,
+  "Your browser does not support the video tag", and split words ("Y our").
+  The advice often spends its craft fix on it. Several picks are news
+  briefs, Q&A transcripts or roundups rather than in-depth features.
+
 ## Fine-tuning setup
 
 - **Method:** QDoRA (4-bit base, DoRA adapters) on Google Colab, with

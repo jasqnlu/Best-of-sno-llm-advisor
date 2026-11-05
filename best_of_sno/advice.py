@@ -311,8 +311,14 @@ def check_advice(text: str, story: dict) -> list[str]:
     elif p["length"] is not None:
         problems.append(f"LENGTH part on a draft of {LENGTH_THRESHOLD}+ words")
     model_part = "\n".join(p["sections"].get("BIGGEST FIXES", []) + p["sections"].get("WHAT'S WORKING", []))
+    # Quotes are checked against the draft above; a draft's own "50% off" or
+    # "1,200 words" isn't the model talking about chance or length.
+    # Links stay banned even inside quotes.
+    unquote = lambda t: re.sub(r'"[^"]*"', '""', t)
     for pattern, why in _BANNED:
-        if pattern.search(model_part if why.startswith("talks about length") else text):
+        target = (unquote(model_part) if why.startswith("talks about length")
+                  else unquote(text) if why == "gives a percentage" else text)
+        if pattern.search(target):
             problems.append(why)
     return problems
 
