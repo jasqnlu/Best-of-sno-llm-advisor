@@ -206,6 +206,44 @@ on the rubric).
 - **Round 0 after cleanup:** 43 of the 100 examples still pass; 23 were
   news stories and 34 advised on layout clutter.
 
+### Round 0b and the second cleanup (2026-11-04)
+
+Eleven subagents wrote advice for 257 more stories (every remaining usable
+non-winner and school winner, plus archive winners), each in its own
+scratch folder. 237 of 257 passed the code checks first try; nearly every
+first-try failure was a quote of 25+ words.
+
+Their reports found leftovers the first cleanup missed and spots where it
+cut too much; `strip_layout` now also:
+- removes Best of SNO's footer, "This story was originally published on …"
+  (511 of 518 archive winners; no school story has it);
+- removes bracketed credits with web addresses and "(Name)" / "(Courtesy
+  Name)" credits (credit only: these often follow a story sentence, not a
+  caption);
+- ends a "— Name" signature where the story starts again ("— Kevin
+  Williamson Beyond his …", "— Bruce Waxman, Archer Parent Jaya …",
+  "— Asst. Principal Aubrei Watson Watson says …"), which earlier ate the
+  next sentence;
+- keeps the copy of a repeated sentence with its speaker right after it.
+
+Final: 669 of 733 stories changed, about 26,800 words removed.
+
+**Training set:** 299 examples (43 from round 0, 256 from round 0b; one
+dropped just under 500 words without the footer and lacked the LENGTH
+line). 84 school non-winners, 28 school winners, 187 archive winners.
+First fixes: craft 134, lede 99, focus 21, significance 20, depth 10,
+sourcing 6, quotes 5, and 4 all-5 stories. Median 235 words.
+`data/advice/train.jsonl` is 3.6 MB.
+
+**For review:** 15 answers flag a fact for the writer to check; a few
+rest on outside knowledge ("the Kennedy Space Center is not in Orlando").
+A fine-tuned 12B could learn to assert facts it gets wrong, so the round-1
+checklist should ask whether every claim about the draft is in the draft.
+
+**Layer 3 note:** the scorer read the footer on archive winners, so their
+scores may carry a source tell. Re-scoring with `strip_layout` text is on
+the README list.
+
 ## Fine-tuning setup
 
 - **Method:** QDoRA (4-bit base, DoRA adapters) on Google Colab, with

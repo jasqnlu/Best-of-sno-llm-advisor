@@ -20,7 +20,7 @@ schools that weren't picked.
 > the advice model comes next. See [Roadmap](#roadmap).
 
 ![Python 3.14](https://img.shields.io/badge/python-3.14-3776ab)
-![Tests: 302 passing, offline](https://img.shields.io/badge/tests-302%20passing%2C%20offline-2ea44f)
+![Tests: 306 passing, offline](https://img.shields.io/badge/tests-306%20passing%2C%20offline-2ea44f)
 ![Data: local only](https://img.shields.io/badge/story%20text-never%20committed-lightgrey)
 
 ---
@@ -389,7 +389,7 @@ chat-format export for Colab, and the "Stories to learn from" part. That last
 part is picked by code, not the model: archive winners on a similar topic
 (local `nomic-embed-text` embeddings) that scored 5 on the draft's top fixes,
 so every link is real. Drafts reach the advice model with page leftovers
-removed (`prep.strip_layout`: photo credits and their captions, pull quotes,
+removed (`prep.strip_layout`: Best of SNO's republishing footer, photo credits and their captions, pull quotes,
 repeated sentences, video-player text, split drop caps), and only stories the
 scorer tagged feature or profile are used.
 
@@ -405,7 +405,7 @@ cd Best-of-sno-llm-advisor
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r best_of_sno/requirements.txt pytest
 
-python -m pytest best_of_sno/tests -q    # 302 tests, fully offline, ~3 s
+python -m pytest best_of_sno/tests -q    # 306 tests, fully offline, ~3 s
 ```
 
 Dependencies are deliberately small: `requests`, `feedparser`, `beautifulsoup4`,
@@ -528,7 +528,7 @@ best_of_sno/
 ├── requirements.txt
 ├── data/              (gitignored) CSVs, scores, state, raw pages
 ├── logs/              (gitignored) one log per job
-└── tests/             27 test files, 302 tests, offline
+└── tests/             27 test files, 306 tests, offline
     └── fixtures/      saved real pages, sitemaps and feeds from each site
 docs/
 ├── images/            README charts + the script that draws them
@@ -594,14 +594,18 @@ test and a fix:
 | Training-data prep | ✅ built · `training.csv` ready |
 | Layer 3 · sub-score rubric + scorer | ✅ built · Gemma 12B scored 733 features |
 | Layer 4 · chance bar | ✅ built (PR #14): logistic regression, Low / Medium / High |
-| Advice model | 🟨 pre-training steps built (`advice.py`); next: round-0 examples, Colab notebook, training. QDoRA-fine-tuned Gemma 12B ([design](docs/superpowers/specs/2026-11-03-advice-model-design.md)) |
+| Advice model | 🟨 pre-training steps built (`advice.py`); 299 round-0 examples written and checked; next: Colab notebook, training. QDoRA-fine-tuned Gemma 12B ([design](docs/superpowers/specs/2026-11-03-advice-model-design.md)) |
 
 Also on the list:
 - find out why Layer 4 gains little from the scores within one school: the
   regression learns mostly from archive winners (518 of 578), so its weights may
   suit "archive vs school" better than "winner vs non-winner at one school"
   ([details](docs/superpowers/specs/2026-11-01-layer3-subscore-rubric-design.md#re-score-with-focus-v2-two-runs-averaged-run-2026-11-04-on-the-pc));
-- pick more schools to crawl from `school_sites.csv`.
+- pick more schools to crawl from `school_sites.csv`;
+- re-score with the republishing footer removed: 511 of 518 archive winners end
+  with "This story was originally published on …", which no school story has,
+  and the scorer saw it (it even quoted it as Craft evidence). It may be part of
+  why the scores separate archive winners better than winners inside one school.
 
 Done: all 733 features re-scored with the reworded Focus, two runs each, averaged,
 and Layer 4 refitted (2026-11-04); the editor's own publication (theburlingameb.org) is one of the four crawled

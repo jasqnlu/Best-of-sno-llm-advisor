@@ -165,3 +165,36 @@ def test_strip_layout_drops_a_repeated_caption_sentence():
     body = f"Carrillo grew up here. {s} She interns now. Later she graduated. {s} ( Vidya Praveen ) The end."
     out = strip_layout(body)
     assert out.count(s) == 1 and "Praveen" not in out
+
+
+def test_pull_quote_signatures_end_where_the_story_starts_again():
+    q = "We are mentors first and we teach the value of service to every student."
+    body = (f"Members serve. “{q} — Asst. Principal Aubrei Watson Watson says her path began early. "
+            f"“{q}” Watson said.")
+    assert strip_layout(body) == f"Members serve. Watson says her path began early. “{q}” Watson said."
+    q2 = "You really start to take in the full impact of what is not there anymore."
+    body = (f"It burned. “{q2}” — Bruce Waxman, Archer Parent Jaya Srinivasan (’28) and her family moved. "
+            f"“{q2},” Waxman said.")
+    assert strip_layout(body).startswith("It burned. Jaya Srinivasan (’28) and her family moved.")
+
+
+def test_repeat_keeps_the_copy_with_the_speaker_right_after():
+    q = "It is almost more fun watching my kids surf than doing it myself today"
+    body = (f"He surfs. “Wow. {q}. It is great.” He paddles out each morning before school, and his friend "
+            f"Lee said so. More text here. “Wow. {q}. It is great,” Baxter said. The end.")
+    out = strip_layout(body)
+    assert out.count(q) == 1 and f"“Wow. {q}. It is great,” Baxter said." in out
+
+
+def test_republishing_footer_and_bracket_credits_go():
+    body = ("A craft culture grew. Fans line the walls of her shop. (Photo courtesy of Lynn McMaster, "
+            "outofaportrait.com) She sells them. The dog sleeps in the seat of the car. (Courtesy Julie Corzine) "
+            "It ends. This story was originally published on The Scroll on December 10, 2025.")
+    # A "(Name)" credit takes no caption with it: it often follows story text.
+    assert strip_layout(body) == "A craft culture grew. She sells them. The dog sleeps in the seat of the car. It ends."
+
+
+def test_signature_stops_at_the_next_sentence():
+    q = "Our club focuses on the plans for the year and how members can help out."
+    body = f"Intro here. “{q}” — Kevin Williamson Beyond his duties, he hikes. “{q}” Williamson said."
+    assert strip_layout(body) == f"Intro here. Beyond his duties, he hikes. “{q}” Williamson said."
