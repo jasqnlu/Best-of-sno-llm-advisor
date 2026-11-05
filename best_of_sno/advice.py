@@ -31,6 +31,8 @@ import requests
 from .layer3 import feature_set, scores_file
 from .layer3_trial import _read_csv, load_scores, trial_dir
 from .layer4 import chance_band, predict
+from .prep import strip_layout
+from .scraper import word_count
 from .scorer import DIMENSION_KEYS, DIMENSIONS, LENGTH_THRESHOLD, evidence_found
 
 SCORER_MODEL = "gemma4:12b"
@@ -50,6 +52,9 @@ FALLBACK_POOL = 20         # if no similar winner scored 5, look this deep
 MIN_PICKS, MAX_PICKS = 2, 3
 WEIGHT_NUDGE = (0.75, 1.25)
 MIN_WORDS = 150            # shorter "stories" are stubs; never examples or picks
+# Scorer story types the advice model learns from and recommends. News
+# briefs, Q&A transcripts and the like (tagged news/other/...) are left out.
+ADVICE_TYPES = ("feature", "profile")
 
 LABELS = {k: label for k, label, _, _ in DIMENSIONS}
 ANCHORS = {k: anchors for k, _, _, anchors in DIMENSIONS}
@@ -110,9 +115,10 @@ def heldout_ids(data_dir: str) -> set[str]:
 
 
 def load_stories(data_dir: str) -> dict[str, dict]:
-    """Every scored feature, ready for ``build_prompt``: text, averaged
-    scores, run-1 evidence quotes (only those really in the story) and the
-    chance band."""
+    """Every scored feature, ready for ``build_prompt``: text with page
+    leftovers removed (``prep.strip_layout``), averaged scores, run-1
+    evidence quotes (only those still in that text) and the chance band.
+    Word count is the cleaned text's; the band keeps Layer 3's."""
     text = {s["id"]: s for s in feature_set(data_dir)}
     evidence = load_scores(scores_file(data_dir, SCORER_MODEL))
     with open(os.path.join(data_dir, "data", "layer4_model.json"), encoding="utf-8") as f:
@@ -122,14 +128,16 @@ def load_stories(data_dir: str) -> dict[str, dict]:
         s = text.get(r["id"])
         if s is None:
             continue
+        body = strip_layout(s["body"])
         scores = {k: float(r[k]) for k in DIMENSION_KEYS}
         ev = evidence.get(r["id"], {}).get("scores", {})
-        quotes = {k: ev[k]["evidence"] if k in ev and evidence_found(ev[k]["evidence"], s["body"]) else ""
+        quotes = {k: ev[k]["evidence"] if k in ev and evidence_found(ev[k]["evidence"], body) else ""
                   for k in DIMENSION_KEYS}
         row = dict(scores, log_words=math.log(max(int(r["word_count"]), 1)))
         out[r["id"]] = {"id": r["id"], "label": r["label"], "source": r["source"],
-                        "school": r["school"], "title": s["title"], "body": s["body"],
-                        "word_count": int(r["word_count"]), "scores": scores, "evidence": quotes,
+                        "school": r["school"], "title": s["title"], "body": body,
+                        "word_count": word_count(body), "story_type": r["story_type"],
+                        "scores": scores, "evidence": quotes,
                         "band": chance_band(predict(model, row)), "coefs": model["coefs"]}
     return out
 
@@ -250,6 +258,11 @@ _BANNED = [
     (re.compile(r"\*\*|^#+\s", re.M), "uses markdown"),
     (re.compile(r"\bword count\b|\b\d[\d,]*\s+words\b", re.I), "talks about length outside LENGTH"),
     (re.compile(r"STORIES TO LEARN FROM", re.I), "writes the stories part (code adds it)"),
+    # Drafts reach the model with page leftovers stripped (prep.strip_layout);
+    # a student's own draft has none, so advice about them is learned noise.
+    (re.compile(r"pull[- ]quotes?|\bcaptions?\b|photo credits?|credit lines?|your browser|video tag"
+                r"|audio clip|page (?:layout|clutter)|(?:web|page) (?:leftovers?|text|artifacts?)"
+                r"|pasted (?:in|into)\b", re.I), "comments on page layout"),
 ]
 
 
@@ -325,12 +338,16 @@ def check_advice(text: str, story: dict) -> list[str]:
 
 # ---------- round 0: examples written by Claude subagents ----------
 
+def _usable(s: dict) -> bool:
+    return s["word_count"] >= MIN_WORDS and s.get("story_type", "feature") in ADVICE_TYPES
+
+
 def pick_round0(stories: dict[str, dict], held: set[str], n: int = ROUND0_N,
                 seed: int = SEED) -> list[str]:
     """Half non-winners, half winners; of the winners, up to half from the
     school sites (the rest archive), so school writing isn't drowned out."""
     rng = random.Random(seed)
-    pool = [s for i, s in sorted(stories.items()) if i not in held and s["word_count"] >= MIN_WORDS]
+    pool = [s for i, s in sorted(stories.items()) if i not in held and _usable(s)]
     non = [s["id"] for s in pool if s["label"] != "winner"]
     school = [s["id"] for s in pool if s["label"] == "winner" and s["source"] == "training"]
     archive = [s["id"] for s in pool if s["label"] == "winner" and s["source"] == "archive"]
@@ -405,7 +422,8 @@ def import_examples(data_dir: str, *, round_name: str = "round0") -> dict:
                 if sid not in wanted:
                     problems.append(f"{name}:{n}: id not in this round: {sid!r}")
                     continue
-                found = check_advice(text, stories[sid])
+                found = (check_advice(text, stories[sid]) if _usable(stories[sid])
+                         else [f"not in the advice pool ({stories[sid]['story_type']})"])
                 if found:
                     rejected.append({"id": sid, "advice": text, "problems": found})
                 else:
@@ -470,7 +488,7 @@ def pool_ids(stories: dict[str, dict], held: set[str]) -> list[str]:
     """Archive winners only: they're published on bestofsno.com, so each
     pick is a link anyone can open."""
     return [i for i, s in stories.items()
-            if s["source"] == "archive" and i not in held and s["word_count"] >= MIN_WORDS]
+            if s["source"] == "archive" and i not in held and _usable(s)]
 
 
 def embed(data_dir: str, *, model: str = EMBED_MODEL, embedder=ollama_embed, log=print) -> dict:

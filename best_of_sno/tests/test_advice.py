@@ -250,3 +250,16 @@ def test_ollama_embed_checks_the_count():
         def json(self): return {"embeddings": [[1.0]]}
     with pytest.raises(ValueError):
         A.ollama_embed(["a", "b"], post=lambda *a, **k: R())
+
+
+def test_news_briefs_are_never_examples_or_picks():
+    st = _stories()
+    for i in ("id04", "id06"):
+        st[i]["story_type"] = "news"
+    assert not {"id04", "id06"} & set(A.pick_round0(st, held=set(), n=40))
+    assert "id06" not in A.pool_ids(st, set()) and "id07" in A.pool_ids(st, set())
+
+
+def test_layout_talk_fails():
+    text = GOOD.replace("Name them:", "Cut the pull quote that repeats this. Name them:")
+    assert "comments on page layout" in A.check_advice(text, _story())

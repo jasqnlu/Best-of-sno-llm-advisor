@@ -121,3 +121,47 @@ def test_build_guards_a_body_that_starts_with_a_formula_after_cleaning(tmp_path)
 def test_min_words_keeps_short_photo_essays():
     # Photo essays ("In Photos: ...") carry 20-80 words of intro and stay in.
     assert MIN_WORDS <= 20
+
+
+# ---------- strip_layout (advice model only) ----------
+
+from best_of_sno.prep import strip_layout
+
+
+def test_strip_layout_removes_player_text_and_drop_caps():
+    assert strip_layout("Dogs wait. Your browser does not support the video tag. T he end came.") \
+        == "Dogs wait. The end came."
+    assert strip_layout("It was cold. “C old weather is a trigger.”") == "It was cold. “Cold weather is a trigger.”"
+    assert strip_layout("I went home. A storm hit.") == "I went home. A storm hit."
+
+
+def test_strip_layout_removes_credits_with_their_captions():
+    body = ("Gu studied cells. Kevin Gu pipettes at the lab in San Diego. Photo courtesy of Kevin Gu. "
+            "He kept going. Students gather around the stage at night. ( Nola Miller ) The end.")
+    assert strip_layout(body) == "Gu studied cells. He kept going. The end."
+
+
+def test_strip_layout_keeps_attributions_and_acronyms():
+    body = "“It works,” Chilson said. ( Claire Hwang ) He created the Department ( DOGE ) last year."
+    assert strip_layout(body) == "“It works,” Chilson said. He created the Department ( DOGE ) last year."
+
+
+def test_strip_layout_removes_a_pull_quote_but_keeps_the_quote_in_the_text():
+    quote = "I would pace around my room and do exercises until 2 a.m."
+    body = (f"She lost weight. “{quote} — Elina Mahanta* For Mahanta, it got worse. "
+            f"“{quote} or until I passed out,” Mahanta said. Later she recovered.")
+    out = strip_layout(body)
+    assert out.count(quote) == 1 and "— Elina" not in out
+    assert "or until I passed out,” Mahanta said." in out
+
+
+def test_strip_layout_keeps_a_quote_box_found_nowhere_else():
+    body = "The team trains daily. “We are all very close as a team this year.” — Angie Sun (11) More news."
+    assert strip_layout(body) == body
+
+
+def test_strip_layout_drops_a_repeated_caption_sentence():
+    s = "Carrillo decided to switch from medicine to law after the iLead program ended."
+    body = f"Carrillo grew up here. {s} She interns now. Later she graduated. {s} ( Vidya Praveen ) The end."
+    out = strip_layout(body)
+    assert out.count(s) == 1 and "Praveen" not in out

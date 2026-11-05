@@ -183,6 +183,29 @@ each), checking their own answers with `check_advice` and fixing failures.
   The advice often spends its craft fix on it. Several picks are news
   briefs, Q&A transcripts or roundups rather than in-depth features.
 
+### Cleanup after round 0 (2026-11-04)
+
+The page clutter is gone from what the advice model sees. Layer 3 scores
+are kept as they are (re-scoring takes hours, and the clutter barely bears
+on the rubric).
+
+- **`prep.strip_layout`:** removes photo credits ("Photo courtesy of …",
+  "( Name )") with the caption sentence before each (4–40 words, no quote
+  marks, no "said"), pull quotes (sentences before a "— Name" that all
+  appear elsewhere in the story), repeated sentences (keeping the copy
+  followed by "said"), video-player text and audio-clip labels, and rejoins
+  split drop caps. It changes 393 of 733 stories and removes about 20,000
+  words, all of it repeated or caption text. A quote box found nowhere else
+  in the story stays.
+- **Pool:** only stories the scorer tagged `feature` or `profile`; news
+  (120 stories) and the rest are left out of examples and picks. That
+  leaves 553 usable training stories (84 non-winners, 28 school winners,
+  441 archive winners) and 441 winners to recommend.
+- **New code check:** advice that talks about page layout (pull quotes,
+  captions, photo credits, video players) fails.
+- **Round 0 after cleanup:** 43 of the 100 examples still pass; 23 were
+  news stories and 34 advised on layout clutter.
+
 ## Fine-tuning setup
 
 - **Method:** QDoRA (4-bit base, DoRA adapters) on Google Colab, with
