@@ -572,7 +572,7 @@ test and a fix:
 | Training-data prep | ✅ built · `training.csv` ready |
 | Layer 3 · sub-score rubric + scorer | ✅ built · Gemma 12B scored 733 features |
 | Layer 4 · chance bar | ✅ built (PR #14): logistic regression, Low / Medium / High |
-| Advice model | ⬜ designed, not built: QDoRA-fine-tuned Gemma ([design proposal](docs/superpowers/specs/2026-11-03-advice-model-design.md)) |
+| Advice model | ⬜ design approved, not built: QDoRA-fine-tuned Gemma 12B ([design](docs/superpowers/specs/2026-11-03-advice-model-design.md)) |
 
 Also on the list:
 - find out why Layer 4 gains little from the scores within one school: the

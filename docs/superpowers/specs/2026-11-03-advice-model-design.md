@@ -1,7 +1,8 @@
 # Advice model: QDoRA fine-tuned Gemma (design)
 
-Date: 2026-11-03. Status: **proposal, needs the owner's sign-off** on the
-items marked [open]. Background: the 2026-11-01 brainstorm
+Date: 2026-11-03. Status: **approved by the owner 2026-11-04** (base model,
+data handling, output format and inspiration stories decided; one question
+still open, see the end). Background: the 2026-11-01 brainstorm
 (`docs/layer3-brainstorm-context.md` on branch
 `docs/layer3-brainstorm-context`, sections 5–8) and the Layer 3 design
 (`2026-11-01-layer3-subscore-rubric-design.md`).
@@ -37,6 +38,59 @@ Plain text in three parts, in this order:
 3. **Length (only if under 500 words).** The fixed line "Under 500 words:
    in-depth features that win usually run longer." Length is never advice
    beyond that line (Layer 3 rule).
+4. **Stories to learn from (2–3).** Archive winners the writer can read as
+   models. **Code adds this part, not the model** (see below), so every
+   link is a real winner.
+
+The owner approved this sample (2026-11-04; made-up draft, ~430 words,
+chance band Medium):
+
+```
+BIGGEST FIXES
+1. Lede (2/5) — "On Friday, the district announced that custodian Ray Ortiz
+   will retire after 31 years." This opens on news a district email already
+   gave everyone. Open on a scene only you saw — Ortiz on his nightly round —
+   and bring in the retirement by the third paragraph.
+2. Sourcing (2/5) — "Many students say he is the heart of the school."
+   "Many students" is no one. Name two students and a coworker from his
+   shift, and quote each on one specific moment, not general praise.
+3. Depth (3/5) — "He has seen a lot of changes over the years." Name them:
+   ask about the year the gym flooded or the 1994 remodel, and give one
+   concrete before-and-after.
+
+WHAT'S WORKING
+Craft — "He still keys the boiler room door left-handed, the way his
+father taught him." A detail that shows who he is. Keep it, and find more.
+
+LENGTH
+Under 500 words: in-depth features that win usually run longer.
+
+STORIES TO LEARN FROM
+• "[Archive winner title]" — [School], [Month Year] — bestofsno.com/…
+  Read for the lede (5/5): two paragraphs of scene before any news.
+• "[Archive winner title]" — [School], [Month Year] — bestofsno.com/…
+  Read for sourcing (5/5): six named voices, each tied to a moment.
+```
+
+### Choosing the stories to learn from
+
+Picked by code after the model writes parts 1–3, so the fine-tuned model
+never writes a URL (a 12B model can invent links):
+
+- **Pool:** archive winners in the 733 scored features, minus the 60
+  held-out stories and the draft itself.
+- **Topic match:** embed each story's title and opening (first ~300 words)
+  with a local Ollama embedding model (e.g. `nomic-embed-text`); rank the
+  pool by cosine similarity to the draft. Embeddings are cached in
+  `best_of_sno/data/advice/` (git-ignored).
+- **Fit to the fixes:** for each of the draft's top fixes, take the most
+  similar winner that scored 5 on that dimension; skip repeats, stop at 3.
+  If none scores 5, take the highest scorer among the 20 most similar.
+- **"Read for" line:** filled from that winner's score and its Layer 3
+  evidence, not written freely. The line gives the dimension and a short
+  reason, never a long quote from the winner.
+- Titles, schools, dates and URLs come from `archive.csv` as published on
+  bestofsno.com.
 
 The model never states the chance as a percentage (Layer 4 decision) and
 never claims a reason a story would win that it can't point to in the
@@ -52,9 +106,8 @@ Pinned, like the scorer prompt, so training and use match:
 - word count and the 500-word check;
 - the Layer 4 weights, as a ranked list of which dimensions matter most.
 
-Focus is currently being reworded (trial on 2026-11-03). Training examples
-must be built from the **final** rubric's scores, so example building
-waits until that settles.
+Training examples are built from the final rubric's scores: focus-v2,
+pinned 2026-11-04, two runs averaged (`layer3_scores.csv`).
 
 ## Training data
 
@@ -98,12 +151,12 @@ checklist score stops rising.
   Hugging Face `transformers`, `peft` (`use_dora=True`) and
   `bitsandbytes`. Rank 16, alpha 32, all attention and MLP projections,
   2 epochs, learning rate 1e-4, loss on the advice tokens only.
-- **Base model size [open]:** Gemma 12B matches the scorer and is the
-  stronger writer, but stories run up to ~6.7k prompt tokens, so 12B
-  training needs a Colab GPU with about 24 GB or more (L4 or A100: Colab
-  Pro). The small Gemma (`e4b`) trains on the free T4. Proposal: run
-  round 0 on the small model first (cheap check that the pipeline works
-  end to end), then train 12B for real if Colab Pro is available.
+- **Base model: Gemma 12B (decided 2026-11-04).** It matches the scorer and
+  is the stronger writer. Stories run up to ~6.7k prompt tokens, so 12B
+  training needs a Colab GPU with about 24 GB or more (L4 or A100), which
+  needs Colab Pro. The owner will buy Colab Pro when training starts; until
+  then, all the steps before training (examples, code checks, export) can be
+  built and tested on the PC. The small-model trial run is skipped.
 - **Back to the PC:** merge the adapter into the base model, convert to
   GGUF, quantize to `Q4_K_M` (the same as the untrained baseline, so
   before/after comparisons are fair), and load it in Ollama under a new
@@ -129,27 +182,30 @@ owner prefers it on most of the 10.
   (stories + scores → JSONL for subagents); `import` (validate subagent
   advice with the code checks); `export-train` (chat-format JSONL for
   Colab); `run MODEL` (advice for the held-out set through Ollama);
-  `grade-batch` / `import-grades`; `compare`.
+  `grade-batch` / `import-grades`; `compare`; `embed` (cache embeddings
+  for the archive-winner pool) and `inspire` (append "Stories to learn
+  from" to a piece of advice).
 - `notebooks/qdora_advice.ipynb`: the Colab training notebook. It reads the
   training JSONL from the owner's Google Drive; no story text is committed.
 - Everything with story text stays in `best_of_sno/data/advice/`
   (git-ignored).
 
-## Data handling [open]
+## Data handling (decided 2026-11-04)
 
-Training files contain full story text. Uploading them to the owner's
-private Google Drive for Colab keeps them off public services, but it is
-still a copy outside the PC. The owner should confirm that's acceptable;
-otherwise training has to happen on a local GPU (the 2060 Super's 8 GB is
-too small for 12B QDoRA at this context length, and tight for the small
-model).
+Training files contain full story text. The owner approved uploading them
+to their private Google Drive for Colab. Size: the 733 scored features are
+about 913,000 words (~5.6 MB of text, ~1.2M tokens; median 1,112 words,
+longest 4,603), so the training JSONL for all 673 non-held-out stories is
+under 10 MB. Nothing with story text is committed.
 
-## Open questions for the owner
+## Decisions (2026-11-04)
 
-1. Base model: small first then 12B (proposed), or straight to 12B? Is
-   Colab Pro available?
-2. Is uploading training text to your Google Drive for Colab OK?
-3. Output format above: right length and parts? Should advice also cite a
-   similar archive winner as an example (retrieval), as the 10-29 plan had?
-4. About 300 Claude-written examples for round 0 (roughly 12 subagent
+1. Base model: straight to Gemma 12B; Colab Pro bought when training starts.
+2. Uploading training text to the owner's Google Drive for Colab: approved.
+3. Output format: the sample above is approved, with a fourth part, "Stories
+   to learn from", picked by code.
+
+## Still open
+
+1. About 300 Claude-written examples for round 0 (roughly 12 subagent
    batches): enough, or start with 100?
