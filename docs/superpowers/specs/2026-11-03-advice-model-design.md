@@ -32,8 +32,8 @@ Plain text in three parts, in this order:
 
 1. **Biggest fixes (up to 3).** Each names one rubric dimension, quotes the
    draft (under 25 words, word for word), says what is wrong with that
-   passage and what to do instead. Ordered by how much the fix should move
-   the chance bar: Layer 4 weight × how far the score is below 5.
+   passage and what to do instead. Ordered by the FIX ORDER the prompt
+   gives (see "Fix order" below).
 2. **What's working (1).** One strength, quoted, so the writer keeps it.
 3. **Length (only if under 500 words).** The fixed line "Under 500 words:
    in-depth features that win usually run longer." Length is never advice
@@ -86,9 +86,11 @@ never writes a URL (a 12B model can invent links):
 - **Fit to the fixes:** for each of the draft's top fixes, take the most
   similar winner that scored 5 on that dimension; skip repeats, stop at 3.
   If none scores 5, take the highest scorer among the 20 most similar.
-- **"Read for" line:** filled from that winner's score and its Layer 3
-  evidence, not written freely. The line gives the dimension and a short
-  reason, never a long quote from the winner.
+- **"Read for" line:** filled from that winner's score and the rubric's
+  description of that score, not written freely, and never quoting the
+  winner.
+- Stories under 150 words (stubs) are never picked, and never used as
+  training examples.
 - Titles, schools, dates and URLs come from `archive.csv` as published on
   bestofsno.com.
 
@@ -96,15 +98,28 @@ The model never states the chance as a percentage (Layer 4 decision) and
 never claims a reason a story would win that it can't point to in the
 scores.
 
+### Fix order
+
+Built 2026-11-04 (`advice.fix_order`). The first design ranked fixes by
+Layer 4 weight × gap to 5. On the real data that breaks: sourcing and
+depth have weights of about zero or below, so they would never be fixed
+even at 1/5, and a weight boost of ×0.5–×1.5 still put craft first for 632
+of 733 stories. The order is now **the gap to 5, nudged by the weight**
+(×0.75 for a weight at or below zero, up to ×1.25 for the largest). First
+fixes across the 733: craft 309, lede 280, focus 47, significance 40,
+depth 28, quotes 14, sourcing 9. Ties go to the lower score, then rubric
+order.
+
 ## Inputs (the prompt)
 
 Pinned, like the scorer prompt, so training and use match:
 
 - the draft's title and body;
-- the seven scores, each with its evidence quote;
+- the seven scores, each with its evidence quote (only when the quote is
+  really in the story: 11% of run-1 evidence isn't, e.g. copied anchor text);
 - the chance band;
 - word count and the 500-word check;
-- the Layer 4 weights, as a ranked list of which dimensions matter most.
+- the FIX ORDER: dimensions below 5, most important first.
 
 Training examples are built from the final rubric's scores: focus-v2,
 pinned 2026-11-04, two runs averaged (`layer3_scores.csv`).
@@ -119,8 +134,10 @@ for now because the chance bar covers features only.
 30 length- and school-matched non-winners). They are never trained on.
 
 **Round 0: imitation (supervised fine-tuning).** Claude subagents write
-advice in the exact output format for about 300 training stories, mixing
-winners and non-winners, 25 stories per subagent batch. Each reply is
+advice in the exact output format for training stories, 25 per subagent
+batch. `export-examples` picks half non-winners and half winners (of the
+winners, half from the school sites), seeded; the default is 100 stories,
+to check format and quality before going to 300. Each reply is
 checked by code before it is kept:
 
 - every quote is in the draft (`scorer.evidence_found`);
