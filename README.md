@@ -20,7 +20,7 @@ schools that weren't picked.
 > the advice model comes next. See [Roadmap](#roadmap).
 
 ![Python 3.14](https://img.shields.io/badge/python-3.14-3776ab)
-![Tests: 301 passing, offline](https://img.shields.io/badge/tests-301%20passing%2C%20offline-2ea44f)
+![Tests: 302 passing, offline](https://img.shields.io/badge/tests-302%20passing%2C%20offline-2ea44f)
 ![Data: local only](https://img.shields.io/badge/story%20text-never%20committed-lightgrey)
 
 ---
@@ -405,7 +405,7 @@ cd Best-of-sno-llm-advisor
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r best_of_sno/requirements.txt pytest
 
-python -m pytest best_of_sno/tests -q    # 301 tests, fully offline, ~3 s
+python -m pytest best_of_sno/tests -q    # 302 tests, fully offline, ~3 s
 ```
 
 Dependencies are deliberately small: `requests`, `feedparser`, `beautifulsoup4`,
@@ -473,7 +473,7 @@ pick up where it stopped.
 | `python -m best_of_sno.layer3 consistency MODEL` | Re-score 30 scored stories (fixed sample) and report any that changed; the main scores file is untouched |
 | `python -m best_of_sno.layer4 evaluate` · `fit` | Cross-validated report (incl. within-school AUC) · save the fitted model |
 | `python -m best_of_sno.advice show ID` | The pinned advice prompt for one scored story |
-| `python -m best_of_sno.advice export-examples [--n 100]` · `import` | Round-0 batches for Claude subagents (25 stories each) · check their advice |
+| `python -m best_of_sno.advice export-examples [--n 100] [--round R --skip-rounds round0]` · `import [--round R]` | Batches for Claude subagents (25 stories each), skipping stories already done · check their advice |
 | `python -m best_of_sno.advice export-train` | Chat-format JSONL for the Colab notebook; refuses held-out stories |
 | `python -m best_of_sno.advice embed` · `inspire ID` | Cache story embeddings · print "Stories to learn from" for one story |
 | `python -m best_of_sno.layer3_trial select` · `run MODEL` · `compare` | The 60-story scorer trial · `run MODEL --variant focus-v2` tries a rubric rewording |
@@ -528,7 +528,7 @@ best_of_sno/
 ├── requirements.txt
 ├── data/              (gitignored) CSVs, scores, state, raw pages
 ├── logs/              (gitignored) one log per job
-└── tests/             27 test files, 301 tests, offline
+└── tests/             27 test files, 302 tests, offline
     └── fixtures/      saved real pages, sitemaps and feeds from each site
 docs/
 ├── images/            README charts + the script that draws them

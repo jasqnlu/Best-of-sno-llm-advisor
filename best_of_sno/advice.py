@@ -379,10 +379,16 @@ must follow FIX ORDER, and the LENGTH part must appear only for drafts under
 """
 
 
-def export_examples(data_dir: str, *, n: int = ROUND0_N, round_name: str = "round0") -> dict:
+def export_examples(data_dir: str, *, n: int = ROUND0_N, round_name: str = "round0",
+                    skip_rounds: tuple[str, ...] = ()) -> dict:
+    """Write batches for subagents. Stories that already have passing
+    advice in ``skip_rounds`` are left out, so a new round adds to them."""
     stories = load_stories(data_dir)
     held = heldout_ids(data_dir)
-    ids = pick_round0(stories, held, n)
+    done = {i for r in skip_rounds for i in load_scores(advice_dir(data_dir, r, "examples.jsonl"))}
+    if round_name in skip_rounds:
+        raise ValueError("a round can't skip itself")
+    ids = pick_round0(stories, held | done, n)
     out = advice_dir(data_dir, round_name)
     os.makedirs(out, exist_ok=True)
     batches = [ids[i:i + BATCH_SIZE] for i in range(0, len(ids), BATCH_SIZE)]
@@ -614,6 +620,8 @@ def main(argv=None) -> None:
     ex = sub.add_parser("export-examples")
     ex.add_argument("--n", type=int, default=ROUND0_N)
     ex.add_argument("--round", default="round0")
+    ex.add_argument("--skip-rounds", nargs="*", default=[],
+                    help="leave out stories with passing advice in these rounds")
     sub.add_parser("import").add_argument("--round", default="round0")
     sub.add_parser("export-train").add_argument("--rounds", nargs="+", default=["round0"])
     sub.add_parser("embed").add_argument("--model", default=EMBED_MODEL)
@@ -624,7 +632,7 @@ def main(argv=None) -> None:
     if a.cmd == "show":
         print(build_prompt(load_stories(a.data_dir)[a.id]))
     elif a.cmd == "export-examples":
-        print(export_examples(a.data_dir, n=a.n, round_name=a.round))
+        print(export_examples(a.data_dir, n=a.n, round_name=a.round, skip_rounds=tuple(a.skip_rounds)))
     elif a.cmd == "import":
         print(json.dumps(import_examples(a.data_dir, round_name=a.round), indent=1))
     elif a.cmd == "export-train":

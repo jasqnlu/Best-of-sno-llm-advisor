@@ -263,3 +263,17 @@ def test_news_briefs_are_never_examples_or_picks():
 def test_layout_talk_fails():
     text = GOOD.replace("Name them:", "Cut the pull quote that repeats this. Name them:")
     assert "comments on page layout" in A.check_advice(text, _story())
+
+
+def test_export_examples_skips_stories_done_in_earlier_rounds(tmp_path, monkeypatch):
+    st = _stories()
+    monkeypatch.setattr(A, "load_stories", lambda d: st)
+    done = tmp_path / "data" / "advice" / "round0"
+    done.mkdir(parents=True)
+    (done / "examples.jsonl").write_text("".join(json.dumps({"id": f"id{i:02}", "advice": "x"}) + "\n"
+                                                for i in range(1, 11)), encoding="utf-8")
+    res = A.export_examples(str(tmp_path), n=100, round_name="round0b", skip_rounds=("round0",))
+    ids = json.loads((tmp_path / "data" / "advice" / "round0b" / "ids.json").read_text(encoding="utf-8"))
+    assert res["stories"] == 29 and not {f"id{i:02}" for i in range(1, 11)} & set(ids)
+    with pytest.raises(ValueError):
+        A.export_examples(str(tmp_path), round_name="round0", skip_rounds=("round0",))
