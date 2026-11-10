@@ -1,7 +1,8 @@
 # Advice model: QDoRA fine-tuned Gemma (design)
 
-Date: 2026-11-03. Status: **proposal, needs the owner's sign-off** on the
-items marked [open]. Background: the 2026-11-01 brainstorm
+Date: 2026-11-03. Status: **approved by the owner 2026-11-04** (base model,
+data handling, output format and inspiration stories decided; one question
+still open, see the end). Background: the 2026-11-01 brainstorm
 (`docs/layer3-brainstorm-context.md` on branch
 `docs/layer3-brainstorm-context`, sections 5–8) and the Layer 3 design
 (`2026-11-01-layer3-subscore-rubric-design.md`).
@@ -31,30 +32,97 @@ Plain text in three parts, in this order:
 
 1. **Biggest fixes (up to 3).** Each names one rubric dimension, quotes the
    draft (under 25 words, word for word), says what is wrong with that
-   passage and what to do instead. Ordered by how much the fix should move
-   the chance bar: Layer 4 weight × how far the score is below 5.
+   passage and what to do instead. Ordered by the FIX ORDER the prompt
+   gives (see "Fix order" below).
 2. **What's working (1).** One strength, quoted, so the writer keeps it.
 3. **Length (only if under 500 words).** The fixed line "Under 500 words:
    in-depth features that win usually run longer." Length is never advice
    beyond that line (Layer 3 rule).
+4. **Stories to learn from (2–3).** Archive winners the writer can read as
+   models. **Code adds this part, not the model** (see below), so every
+   link is a real winner.
+
+The owner approved this sample (2026-11-04; made-up draft, ~430 words,
+chance band Medium):
+
+```
+BIGGEST FIXES
+1. Lede (2/5) — "On Friday, the district announced that custodian Ray Ortiz
+   will retire after 31 years." This opens on news a district email already
+   gave everyone. Open on a scene only you saw — Ortiz on his nightly round —
+   and bring in the retirement by the third paragraph.
+2. Sourcing (2/5) — "Many students say he is the heart of the school."
+   "Many students" is no one. Name two students and a coworker from his
+   shift, and quote each on one specific moment, not general praise.
+3. Depth (3/5) — "He has seen a lot of changes over the years." Name them:
+   ask about the year the gym flooded or the 1994 remodel, and give one
+   concrete before-and-after.
+
+WHAT'S WORKING
+Craft — "He still keys the boiler room door left-handed, the way his
+father taught him." A detail that shows who he is. Keep it, and find more.
+
+LENGTH
+Under 500 words: in-depth features that win usually run longer.
+
+STORIES TO LEARN FROM
+• "[Archive winner title]" — [School], [Month Year] — bestofsno.com/…
+  Read for the lede (5/5): two paragraphs of scene before any news.
+• "[Archive winner title]" — [School], [Month Year] — bestofsno.com/…
+  Read for sourcing (5/5): six named voices, each tied to a moment.
+```
+
+### Choosing the stories to learn from
+
+Picked by code after the model writes parts 1–3, so the fine-tuned model
+never writes a URL (a 12B model can invent links):
+
+- **Pool:** archive winners in the 733 scored features, minus the 60
+  held-out stories and the draft itself.
+- **Topic match:** embed each story's title and opening (first ~300 words)
+  with a local Ollama embedding model (e.g. `nomic-embed-text`); rank the
+  pool by cosine similarity to the draft. Embeddings are cached in
+  `best_of_sno/data/advice/` (git-ignored).
+- **Fit to the fixes:** for each of the draft's top fixes, take the most
+  similar winner that scored 5 on that dimension; skip repeats, stop at 3.
+  If none scores 5, take the highest scorer among the 20 most similar.
+- **"Read for" line:** filled from that winner's score and the rubric's
+  description of that score, not written freely, and never quoting the
+  winner.
+- Stories under 150 words (stubs) are never picked, and never used as
+  training examples.
+- Titles, schools, dates and URLs come from `archive.csv` as published on
+  bestofsno.com.
 
 The model never states the chance as a percentage (Layer 4 decision) and
 never claims a reason a story would win that it can't point to in the
 scores.
+
+### Fix order
+
+Built 2026-11-04 (`advice.fix_order`). The first design ranked fixes by
+Layer 4 weight × gap to 5. On the real data that breaks: sourcing and
+depth have weights of about zero or below, so they would never be fixed
+even at 1/5, and a weight boost of ×0.5–×1.5 still put craft first for 632
+of 733 stories. The order is now **the gap to 5, nudged by the weight**
+(×0.75 for a weight at or below zero, up to ×1.25 for the largest). First
+fixes across the 733: craft 309, lede 280, focus 47, significance 40,
+depth 28, quotes 14, sourcing 9. Ties go to the lower score, then rubric
+order.
 
 ## Inputs (the prompt)
 
 Pinned, like the scorer prompt, so training and use match:
 
 - the draft's title and body;
-- the seven scores, each with its evidence quote;
+- the seven scores, each with its evidence quote (only when the quote is
+  really in the story: 11% of run-1 evidence isn't, e.g. copied anchor text);
 - the chance band;
 - word count and the 500-word check;
-- the Layer 4 weights, as a ranked list of which dimensions matter most.
+- the FIX ORDER: dimensions below 5, most important first.
 
-Focus is currently being reworded (trial on 2026-11-03). Training examples
-must be built from the **final** rubric's scores, so example building
-waits until that settles.
+Training examples are built from the final rubric's scores: focus-v2,
+pinned 2026-11-04, two runs averaged (`layer3_scores.csv`).
 
 ## Training data
 
@@ -66,8 +134,10 @@ for now because the chance bar covers features only.
 30 length- and school-matched non-winners). They are never trained on.
 
 **Round 0: imitation (supervised fine-tuning).** Claude subagents write
-advice in the exact output format for about 300 training stories, mixing
-winners and non-winners, 25 stories per subagent batch. Each reply is
+advice in the exact output format for training stories, 25 per subagent
+batch. `export-examples` picks half non-winners and half winners (of the
+winners, half from the school sites), seeded; the default is 100 stories,
+to check format and quality before going to 300. Each reply is
 checked by code before it is kept:
 
 - every quote is in the draft (`scorer.evidence_found`);
@@ -92,22 +162,126 @@ checklist score stops rising.
 5. No generic tips ("show, don't tell", "add more quotes") without a
    specific place in the draft.
 
+### Round 0 results (2026-11-04)
+
+Four Claude Code subagents wrote advice for the 100 round-0 stories (25
+each), checking their own answers with `check_advice` and fixing failures.
+
+- **Code checks:** 93 of 100 passed on the first try; all 100 passed after
+  fixes, and `import` accepted all 100. Every first-try failure was a quote
+  problem: six were 25+ words, and one dropped an asterisk from the draft.
+- **Change from this round:** the percentage and length bans no longer
+  apply inside quotes copied from the draft (several drafts quote "50%
+  off"-style figures). Links stay banned everywhere.
+- **Shape:** median 243 words of advice (longest 306). First fixes: craft
+  44, lede 38, focus 5, significance 4, depth 4, quotes 3, sourcing 1, and
+  one all-5 story with none.
+- **Training file:** `data/advice/train.jsonl`, 100 examples, 1.2 MB.
+- **Found in the drafts:** many school-site bodies still carry page
+  clutter: pull quotes repeated word for word, photo captions and credits,
+  "Your browser does not support the video tag", and split words ("Y our").
+  The advice often spends its craft fix on it. Several picks are news
+  briefs, Q&A transcripts or roundups rather than in-depth features.
+
+### Cleanup after round 0 (2026-11-04)
+
+The page clutter is gone from what the advice model sees. Layer 3 scores
+are kept as they are (re-scoring takes hours, and the clutter barely bears
+on the rubric).
+
+- **`prep.strip_layout`:** removes photo credits ("Photo courtesy of …",
+  "( Name )") with the caption sentence before each (4–40 words, no quote
+  marks, no "said"), pull quotes (sentences before a "— Name" that all
+  appear elsewhere in the story), repeated sentences (keeping the copy
+  followed by "said"), video-player text and audio-clip labels, and rejoins
+  split drop caps. It changes 393 of 733 stories and removes about 20,000
+  words, all of it repeated or caption text. A quote box found nowhere else
+  in the story stays.
+- **Pool:** only stories the scorer tagged `feature` or `profile`; news
+  (120 stories) and the rest are left out of examples and picks. That
+  leaves 553 usable training stories (84 non-winners, 28 school winners,
+  441 archive winners) and 441 winners to recommend.
+- **New code check:** advice that talks about page layout (pull quotes,
+  captions, photo credits, video players) fails.
+- **Round 0 after cleanup:** 43 of the 100 examples still pass; 23 were
+  news stories and 34 advised on layout clutter.
+
+### Round 0b and the second cleanup (2026-11-04)
+
+Eleven subagents wrote advice for 257 more stories (every remaining usable
+non-winner and school winner, plus archive winners), each in its own
+scratch folder. 237 of 257 passed the code checks first try; nearly every
+first-try failure was a quote of 25+ words.
+
+Their reports found leftovers the first cleanup missed and spots where it
+cut too much; `strip_layout` now also:
+- removes Best of SNO's footer, "This story was originally published on …"
+  (511 of 518 archive winners; no school story has it);
+- removes bracketed credits with web addresses and "(Name)" / "(Courtesy
+  Name)" credits (credit only: these often follow a story sentence, not a
+  caption);
+- ends a "— Name" signature where the story starts again ("— Kevin
+  Williamson Beyond his …", "— Bruce Waxman, Archer Parent Jaya …",
+  "— Asst. Principal Aubrei Watson Watson says …"), which earlier ate the
+  next sentence;
+- keeps the copy of a repeated sentence with its speaker right after it.
+
+Final: 669 of 733 stories changed, about 26,800 words removed.
+
+**Training set:** 299 examples (43 from round 0, 256 from round 0b; one
+dropped just under 500 words without the footer and lacked the LENGTH
+line). 84 school non-winners, 28 school winners, 187 archive winners.
+First fixes: craft 134, lede 99, focus 21, significance 20, depth 10,
+sourcing 6, quotes 5, and 4 all-5 stories. Median 235 words.
+`data/advice/train.jsonl` is 3.6 MB.
+
+**For review:** 15 answers flag a fact for the writer to check; a few
+rest on outside knowledge ("the Kennedy Space Center is not in Orlando").
+A fine-tuned 12B could learn to assert facts it gets wrong, so the round-1
+checklist should ask whether every claim about the draft is in the draft.
+
+**Layer 3 note:** the scorer read the footer on archive winners, so their
+scores may carry a source tell. Re-scoring with `strip_layout` text is on
+the README list.
+
 ## Fine-tuning setup
 
 - **Method:** QDoRA (4-bit base, DoRA adapters) on Google Colab, with
   Hugging Face `transformers`, `peft` (`use_dora=True`) and
   `bitsandbytes`. Rank 16, alpha 32, all attention and MLP projections,
   2 epochs, learning rate 1e-4, loss on the advice tokens only.
-- **Base model size [open]:** Gemma 12B matches the scorer and is the
-  stronger writer, but stories run up to ~6.7k prompt tokens, so 12B
-  training needs a Colab GPU with about 24 GB or more (L4 or A100: Colab
-  Pro). The small Gemma (`e4b`) trains on the free T4. Proposal: run
-  round 0 on the small model first (cheap check that the pipeline works
-  end to end), then train 12B for real if Colab Pro is available.
+- **Base model: Gemma 12B (decided 2026-11-04).** It matches the scorer and
+  is the stronger writer. Stories run up to ~6.7k prompt tokens, so 12B
+  training needs a Colab GPU with about 24 GB or more (L4 or A100), which
+  needs Colab Pro. The owner will buy Colab Pro when training starts; until
+  then, all the steps before training (examples, code checks, export) can be
+  built and tested on the PC. The small-model trial run is skipped.
 - **Back to the PC:** merge the adapter into the base model, convert to
   GGUF, quantize to `Q4_K_M` (the same as the untrained baseline, so
   before/after comparisons are fair), and load it in Ollama under a new
   name (e.g. `sno-advisor:r0`).
+
+### The notebook (built 2026-11-04)
+
+`notebooks/qdora_advice.ipynb`, with the masking and split in
+`best_of_sno/advice_train.py` (tested offline). Checked on the PC without a
+GPU:
+- **Base model:** `google/gemma-4-12B-it` (the PC's `gemma4:12b` is Gemma
+  4, 11.9B), loaded with `AutoModelForMultimodalLM`; no access request
+  needed. Adapters go on the language model's projections only.
+- **Prompt format:** each example is the chat template's generation prompt
+  for the user turn with `enable_thinking=False` (ending in an empty
+  `<|channel>thought
+<channel|>`), then the advice and `<turn|>` (one
+  token). Ollama's `gemma4:12b` with `think: false` counts the same 14
+  prompt tokens for "Hello", so training and use match.
+- **Real token counts:** 284 training examples, 15 validation; all fit in
+  8,192 (longest 6,433, median 2,338); ~730k tokens per epoch; advice
+  median 315 tokens.
+- **Untested until it runs on Colab:** training itself, the merge, and the
+  llama.cpp GGUF conversion (step 8 depends on llama.cpp converting Gemma
+  4; the adapter is saved to Drive before that, so a failure there loses
+  nothing).
 
 ## Evaluation
 
@@ -129,27 +303,30 @@ owner prefers it on most of the 10.
   (stories + scores → JSONL for subagents); `import` (validate subagent
   advice with the code checks); `export-train` (chat-format JSONL for
   Colab); `run MODEL` (advice for the held-out set through Ollama);
-  `grade-batch` / `import-grades`; `compare`.
+  `grade-batch` / `import-grades`; `compare`; `embed` (cache embeddings
+  for the archive-winner pool) and `inspire` (append "Stories to learn
+  from" to a piece of advice).
 - `notebooks/qdora_advice.ipynb`: the Colab training notebook. It reads the
   training JSONL from the owner's Google Drive; no story text is committed.
 - Everything with story text stays in `best_of_sno/data/advice/`
   (git-ignored).
 
-## Data handling [open]
+## Data handling (decided 2026-11-04)
 
-Training files contain full story text. Uploading them to the owner's
-private Google Drive for Colab keeps them off public services, but it is
-still a copy outside the PC. The owner should confirm that's acceptable;
-otherwise training has to happen on a local GPU (the 2060 Super's 8 GB is
-too small for 12B QDoRA at this context length, and tight for the small
-model).
+Training files contain full story text. The owner approved uploading them
+to their private Google Drive for Colab. Size: the 733 scored features are
+about 913,000 words (~5.6 MB of text, ~1.2M tokens; median 1,112 words,
+longest 4,603), so the training JSONL for all 673 non-held-out stories is
+under 10 MB. Nothing with story text is committed.
 
-## Open questions for the owner
+## Decisions (2026-11-04)
 
-1. Base model: small first then 12B (proposed), or straight to 12B? Is
-   Colab Pro available?
-2. Is uploading training text to your Google Drive for Colab OK?
-3. Output format above: right length and parts? Should advice also cite a
-   similar archive winner as an example (retrieval), as the 10-29 plan had?
-4. About 300 Claude-written examples for round 0 (roughly 12 subagent
+1. Base model: straight to Gemma 12B; Colab Pro bought when training starts.
+2. Uploading training text to the owner's Google Drive for Colab: approved.
+3. Output format: the sample above is approved, with a fourth part, "Stories
+   to learn from", picked by code.
+
+## Still open
+
+1. About 300 Claude-written examples for round 0 (roughly 12 subagent
    batches): enough, or start with 100?
